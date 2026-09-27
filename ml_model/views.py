@@ -36,12 +36,12 @@ def load_model():
 
 def _explanation(clean: bool, intact: bool) -> str:
     if clean and intact:
-        return "Автомобиль выглядит чистым, видимых повреждений кузова модель не обнаружила."
+        return "The car appears clean, and the model found no visible body damage."
     if not clean and intact:
-        return "Модель обнаружила загрязнение, но не выявила признаков повреждения кузова."
+        return "The model detected dirt but found no visible body damage."
     if clean and not intact:
-        return "Автомобиль выглядит чистым, однако модель обнаружила признаки повреждения кузова."
-    return "Модель обнаружила загрязнение и признаки повреждения кузова. Рекомендуется ручной осмотр."
+        return "The car appears clean, but the model detected signs of body damage."
+    return "The model detected dirt and signs of body damage. A manual inspection is recommended."
 
 
 def process_image(image_file) -> dict[str, object]:
