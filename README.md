@@ -5,7 +5,7 @@ DriveAI is a Django application that estimates two exterior car conditions from 
 - cleanliness;
 - visible body integrity.
 
-The inspection workspace also returns interactive segmentation contours for likely dirt, scratches, dents, cracks, glass damage, broken lamps, and tire-area damage. A CarDD-trained YOLO segmentation model supplies damage polygons, while CLIPSeg supplies dense dirt masks. Localization is gated by the global classifiers: dirt contours are not shown on a globally clean car, and damage contours are not shown unless the integrity stage reports possible damage. The masks remain model estimates and are not a substitute for physical inspection.
+The inspection workspace also returns interactive segmentation contours for likely dirt, scratches, dents, tears, punctures, missing exterior parts, broken glass, and broken lamps. A Mask R-CNN damage model supplies full-resolution instance masks, while CLIPSeg supplies dense dirt masks. Localization is gated by the global classifiers: dirt contours are not shown on a globally clean car, and damage contours are not shown unless the integrity stage reports possible damage. The masks remain model estimates and are not a substitute for physical inspection.
 
 The prediction endpoint uses a pretrained CLIP vision backbone plus a trained integrity head. It does not contain random answers, filename rules, or a heuristic fallback. If the model artifact is missing or incompatible, the API returns an explicit service error.
 
@@ -57,10 +57,10 @@ VISION_DEVICE=auto
 VISION_BATCH_SIZE=16
 INTEGRITY_MIN_CLEAN_PROBABILITY=0.35
 DAMAGE_OVERRIDE_PROBABILITY=0.50
-DAMAGE_SEGMENTATION_MODEL_ID=abdullahg7/cardd-yolov8s
-DAMAGE_SEGMENTATION_MODEL_FILE=v2.0/best.pt
-DAMAGE_SEGMENTATION_CONFIDENCE=0.30
-DAMAGE_SEGMENTATION_IMAGE_SIZE=640
+DAMAGE_SEGMENTATION_MODEL_ID=Naiscorp/car-damage-maskrcnn-r101-dc5
+DAMAGE_SEGMENTATION_CONFIDENCE=0.35
+DAMAGE_LOCALIZATION_OVERRIDE_CONFIDENCE=0.80
+DAMAGE_MASK_DUPLICATE_OVERLAP=0.65
 MAX_DAMAGE_REGIONS=8
 DIRT_SEGMENTATION_MODEL_ID=CIDAS/clipseg-rd64-refined
 DIRT_SEGMENTATION_THRESHOLD=0.35
@@ -140,7 +140,7 @@ Successful predictions return deterministic model scores:
 ```text
 indrive_car_check/       Django configuration
 ml_model/vision.py      CLIP loading, embeddings, and semantic cleanliness scoring
-ml_model/localization.py Gated YOLO/CLIPSeg masks and normalized polygon payloads
+ml_model/localization.py Gated Mask R-CNN/CLIPSeg masks and normalized polygon payloads
 ml_model/training.py    Deduplication, CLIP embeddings, integrity validation and final fit
 ml_model/forms.py       Upload and image validation
 ml_model/views.py       Model loading and prediction API

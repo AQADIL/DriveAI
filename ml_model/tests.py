@@ -41,18 +41,41 @@ class FixedVisionRuntime:
 
 
 class FixedLocalizationRuntime:
+    def __init__(self, damage_confidence: float | None = None):
+        self.damage_confidence = damage_confidence
+
     def localize(self, image, *, include_dirt, include_damage):
-        finding_type = "scratch" if include_damage else "dirt"
-        if not include_dirt and not include_damage:
-            return []
-        return [{
-            "id": "finding-1",
+        findings = []
+        if include_damage and self.damage_confidence is not None:
+            findings.append(self._finding("scratch", self.damage_confidence))
+        if include_dirt:
+            findings.append(self._finding("dirt", 88.0))
+        return findings
+
+    @staticmethod
+    def _finding(finding_type, confidence):
+        return {
+            "id": f"{finding_type}-1",
             "type": finding_type,
+            "confidence": confidence,
             "geometry": {
                 "polygon": [{"x": 0.1, "y": 0.1}, {"x": 0.3, "y": 0.1}, {"x": 0.2, "y": 0.3}],
                 "bounds": {"x": 0.1, "y": 0.1, "width": 0.2, "height": 0.2},
             },
-        }]
+        }
+
+
+class FixedDamageModel:
+    def predict(self, image):
+        missing_part = np.zeros((60, 80), dtype=bool)
+        missing_part[25:55, 12:70] = True
+        broken_lamp = np.zeros((60, 80), dtype=bool)
+        broken_lamp[18:32, 12:30] = True
+        return {
+            "labels_en": ["Missing part", "Broken lamp"],
+            "scores": np.asarray([0.98, 0.91]),
+            "masks": np.asarray([missing_part, broken_lamp]),
+        }
 
 
 def image_upload(name: str = "car.jpg") -> SimpleUploadedFile:
@@ -88,6 +111,19 @@ class LocalizationTests(TestCase):
 
         self.assertEqual(len(geometry["polygon"]), 3)
         self.assertEqual(geometry["bounds"], {"x": 0.1, "y": 0.2, "width": 0.6, "height": 0.6})
+
+    def test_damage_masks_include_missing_parts_and_broken_lamps(self):
+        runtime = object.__new__(LocalizationRuntime)
+        runtime.damage_confidence = 0.35
+        runtime.damage_duplicate_overlap = 0.65
+        runtime.max_damage_regions = 8
+        runtime.__dict__["damage_model"] = FixedDamageModel()
+
+        findings = runtime._damage_findings(Image.new("RGB", (80, 60)))
+
+        self.assertEqual([finding["type"] for finding in findings], ["missing_part", "lamp_broken"])
+        self.assertTrue(all(len(finding["geometry"]["polygon"]) >= 4 for finding in findings))
+        self.assertNotIn("glass_shatter", [finding["type"] for finding in findings])
 
 
 class PredictionViewTests(TestCase):
@@ -151,7 +187,7 @@ class PredictionViewTests(TestCase):
     def test_obvious_damage_overrides_dirt_gate(self, mocked_load_model, mocked_vision, mocked_localization):
         mocked_load_model.return_value = artifact(0.05)
         mocked_vision.return_value = FixedVisionRuntime(0.1, damage_probability=0.8)
-        mocked_localization.return_value = FixedLocalizationRuntime()
+        mocked_localization.return_value = FixedLocalizationRuntime(damage_confidence=94.0)
 
         response = self.client.post(reverse("predict"), {"image": image_upload()})
         payload = response.json()
@@ -160,6 +196,28 @@ class PredictionViewTests(TestCase):
         self.assertFalse(payload["intact"])
         self.assertEqual(payload["intact_score"], 20.0)
         self.assertEqual(payload["integrity_status"], "possible_damage")
+        self.assertTrue(any(region["type"] == "scratch" for region in payload["regions"]))
+
+    @patch("ml_model.views.load_localization_runtime")
+    @patch("ml_model.views.load_vision_runtime")
+    @patch("ml_model.views.load_model")
+    def test_strong_damage_mask_overrides_inconclusive_global_score(
+        self,
+        mocked_load_model,
+        mocked_vision,
+        mocked_localization,
+    ):
+        mocked_load_model.return_value = artifact(0.05)
+        mocked_vision.return_value = FixedVisionRuntime(0.1, damage_probability=0.2)
+        mocked_localization.return_value = FixedLocalizationRuntime(damage_confidence=98.0)
+
+        response = self.client.post(reverse("predict"), {"image": image_upload()})
+        payload = response.json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(payload["intact"])
+        self.assertEqual(payload["integrity_status"], "possible_damage")
+        self.assertEqual(payload["intact_score"], 2.0)
         self.assertTrue(any(region["type"] == "scratch" for region in payload["regions"]))
 
     @patch("ml_model.views.load_model")
