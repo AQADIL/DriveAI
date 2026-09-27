@@ -277,11 +277,18 @@
                 if (!response.ok) throw new Error(payload.error || "The analysis request failed.");
 
                 document.getElementById("cleanValue").textContent = payload.clean ? "Clean" : "Needs cleaning";
-                document.getElementById("intactValue").textContent = payload.intact ? "No damage detected" : "Possible damage";
+                const integrityLabels = {
+                    intact: "No damage detected",
+                    possible_damage: "Possible damage",
+                    inconclusive: "Inconclusive — clean car first",
+                };
+                document.getElementById("intactValue").textContent = integrityLabels[payload.integrity_status];
                 document.getElementById("cleanMeter").style.width = `${payload.clean_score}%`;
-                document.getElementById("intactMeter").style.width = `${payload.intact_score}%`;
+                document.getElementById("intactMeter").style.width = payload.intact_score === null ? "0%" : `${payload.intact_score}%`;
                 document.getElementById("cleanScore").textContent = `Clean score: ${payload.clean_score}%`;
-                document.getElementById("intactScore").textContent = `Intact score: ${payload.intact_score}%`;
+                document.getElementById("intactScore").textContent = payload.intact_score === null
+                    ? "Body score withheld until the car is clean"
+                    : `Intact score: ${payload.intact_score}%`;
                 document.getElementById("explanation").textContent = payload.explanation;
                 results.style.display = "block";
             } catch (requestError) {

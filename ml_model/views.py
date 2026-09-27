@@ -6,9 +6,11 @@ import joblib
 from django.conf import settings
 from django.http import JsonResponse
 from django.shortcuts import render
+from PIL import Image
 
-from .features import FEATURE_VERSION, extract_features
 from .forms import PredictionUploadForm
+from .training import ARTIFACT_VERSION
+from .vision import VisionRuntime
 
 
 def home(request):
@@ -29,35 +31,59 @@ def load_model():
     if not model_path.is_file():
         raise FileNotFoundError(f"Trained model not found: {model_path}")
     artifact = joblib.load(model_path)
-    if artifact.get("feature_version") != FEATURE_VERSION:
-        raise RuntimeError("The model feature version does not match the application")
+    if artifact.get("artifact_version") != ARTIFACT_VERSION:
+        raise RuntimeError("The model artifact version does not match the application")
+    if artifact["metadata"]["vision_model_id"] != settings.VISION_MODEL_ID:
+        raise RuntimeError("The configured vision model does not match the trained integrity head")
     return artifact
 
 
-def _explanation(clean: bool, intact: bool) -> str:
-    if clean and intact:
+@lru_cache(maxsize=1)
+def load_vision_runtime():
+    return VisionRuntime(
+        model_id=settings.VISION_MODEL_ID,
+        cache_dir=settings.VISION_MODEL_CACHE_DIR,
+        device_name=settings.VISION_DEVICE,
+    )
+
+
+def _explanation(clean: bool, integrity_status: str) -> str:
+    if integrity_status == "inconclusive":
+        return "The car is too dirty for a reliable body inspection. Clean it and upload a new photo."
+    if clean and integrity_status == "intact":
         return "The car appears clean, and the model found no visible body damage."
-    if not clean and intact:
+    if not clean and integrity_status == "intact":
         return "The model detected dirt but found no visible body damage."
-    if clean and not intact:
+    if clean and integrity_status == "possible_damage":
         return "The car appears clean, but the model detected signs of body damage."
     return "The model detected dirt and signs of body damage. A manual inspection is recommended."
 
 
 def process_image(image_file) -> dict[str, object]:
-    features = extract_features(image_file.read()).reshape(1, -1)
     artifact = load_model()
-    clean_probability = float(artifact["clean_model"].predict_proba(features)[0, 1])
-    intact_probability = float(artifact["intact_model"].predict_proba(features)[0, 1])
+    runtime = load_vision_runtime()
+    image_file.seek(0)
+    with Image.open(image_file) as image:
+        image_features = runtime.encode_images([image], batch_size=1)[0]
+    clean_probability = runtime.cleanliness_probability(image_features)
+    intact_probability = float(artifact["intact_model"].predict_proba(image_features.reshape(1, -1))[0, 1])
     thresholds = artifact["metadata"]["thresholds"]
     clean = clean_probability >= thresholds["clean"]
-    intact = intact_probability >= thresholds["intact"]
+    if clean_probability < settings.INTEGRITY_MIN_CLEAN_PROBABILITY:
+        intact = None
+        intact_score = None
+        integrity_status = "inconclusive"
+    else:
+        intact = intact_probability >= thresholds["intact"]
+        intact_score = round(intact_probability * 100, 1)
+        integrity_status = "intact" if intact else "possible_damage"
     return {
         "clean": clean,
         "intact": intact,
+        "integrity_status": integrity_status,
         "clean_score": round(clean_probability * 100, 1),
-        "intact_score": round(intact_probability * 100, 1),
-        "explanation": _explanation(clean, intact),
+        "intact_score": intact_score,
+        "explanation": _explanation(clean, integrity_status),
     }
 
 

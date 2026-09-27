@@ -1,33 +1,27 @@
 {
-  "feature_version": "car-condition-v1",
-  "trained_at": "2026-09-27T17:29:28.545248+00:00",
-  "available_images": 4370,
-  "clean_training_images": 2070,
-  "intact_training_images": 4370,
-  "missing_images": {
+  "artifact_version": "clip-integrity-v1",
+  "vision_model_id": "openai/clip-vit-base-patch32",
+  "trained_at": "2026-09-27T18:04:33.774964+00:00",
+  "integrity_training_images": 4347,
+  "cleanliness_engine": "CLIP zero-shot prompt ensemble; repository clean labels rejected after audit",
+  "dataset": {
     "train_csv_missing": 0,
     "validation_csv_missing": 0,
-    "test_csv_missing": 230
+    "test_csv_missing": 230,
+    "exact_duplicates_removed": 23,
+    "conflicting_duplicates": 0
   },
   "unreadable_images": [],
   "thresholds": {
-    "clean": 0.65,
-    "intact": 0.565
+    "clean": 0.5,
+    "intact": 0.5
   },
-  "validation": {
-    "clean": {
-      "accuracy": 0.963,
-      "balanced_accuracy": 0.9648,
-      "f1": 0.9765,
-      "roc_auc": 0.9947,
-      "threshold": 0.65
-    },
-    "intact": {
-      "accuracy": 0.9511,
-      "balanced_accuracy": 0.9507,
-      "f1": 0.949,
-      "roc_auc": 0.9929,
-      "threshold": 0.565
-    }
-  }
+  "integrity_validation": {
+    "accuracy": 0.9705,
+    "balanced_accuracy": 0.9706,
+    "f1": 0.9698,
+    "roc_auc": 0.9964,
+    "threshold": 0.5
+  },
+  "integrity_logistic_c": 10.0
 }
