@@ -38,6 +38,7 @@ Paste the generated secret into `DJANGO_SECRET_KEY` in `.env`, then set the rema
 
 ```dotenv
 DJANGO_DEBUG=true
+DJANGO_SETTINGS_MODULE=indrive_car_check.settings
 DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost
 DJANGO_CSRF_TRUSTED_ORIGINS=
 DJANGO_DATABASE_PATH=db.sqlite3

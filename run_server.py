@@ -13,5 +13,6 @@ def required_env(name: str) -> str:
 
 if __name__ == "__main__":
     load_dotenv()
+    os.environ["DJANGO_SETTINGS_MODULE"] = required_env("DJANGO_SETTINGS_MODULE")
     address = f"{required_env('APP_HOST')}:{required_env('APP_PORT')}"
     execute_from_command_line(["manage.py", "runserver", address, "--noreload"])
