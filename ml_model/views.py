@@ -9,6 +9,7 @@ from django.shortcuts import render
 from PIL import Image
 
 from .forms import PredictionUploadForm
+from .localization import localize_findings
 from .training import ARTIFACT_VERSION
 from .vision import VisionRuntime
 
@@ -63,8 +64,9 @@ def process_image(image_file) -> dict[str, object]:
     artifact = load_model()
     runtime = load_vision_runtime()
     image_file.seek(0)
-    with Image.open(image_file) as image:
-        image_features = runtime.encode_images([image], batch_size=1)[0]
+    with Image.open(image_file) as uploaded_image:
+        image = uploaded_image.convert("RGB")
+    image_features = runtime.encode_images([image], batch_size=1)[0]
     clean_probability = runtime.cleanliness_probability(image_features)
     damage_probability = runtime.damage_probability(image_features)
     intact_probability = float(artifact["intact_model"].predict_proba(image_features.reshape(1, -1))[0, 1])
@@ -85,6 +87,20 @@ def process_image(image_file) -> dict[str, object]:
         intact = intact_probability >= thresholds["intact"]
         intact_score = round(intact_probability * 100, 1)
         integrity_status = "intact" if intact else "possible_damage"
+    regions = localize_findings(
+        runtime,
+        image,
+        include_dirt=not clean,
+        include_damage=integrity_status == "possible_damage",
+        columns=settings.LOCALIZATION_GRID_COLUMNS,
+        rows=settings.LOCALIZATION_GRID_ROWS,
+        window_ratio=settings.LOCALIZATION_WINDOW_RATIO,
+        dirt_threshold=settings.DIRT_REGION_THRESHOLD,
+        damage_threshold=settings.DAMAGE_REGION_THRESHOLD,
+        overlap_threshold=settings.LOCALIZATION_NMS_THRESHOLD,
+        max_regions=settings.LOCALIZATION_MAX_REGIONS,
+        batch_size=settings.VISION_BATCH_SIZE,
+    )
     return {
         "clean": clean,
         "intact": intact,
@@ -92,6 +108,8 @@ def process_image(image_file) -> dict[str, object]:
         "clean_score": round(clean_probability * 100, 1),
         "intact_score": intact_score,
         "explanation": _explanation(clean, integrity_status),
+        "regions": regions,
+        "localization_note": "Highlighted areas are model attention zones, not measured defect boundaries.",
     }
 
 

@@ -7,6 +7,7 @@ from django.test import TestCase
 from django.urls import reverse
 from PIL import Image
 
+from .localization import ScanBox, intersection_over_union, scan_boxes
 from .training import ARTIFACT_VERSION, collect_samples
 
 
@@ -20,9 +21,17 @@ class FixedClassifier:
 
 
 class FixedVisionRuntime:
-    def __init__(self, clean_probability: float, damage_probability: float = 0.1):
+    def __init__(
+        self,
+        clean_probability: float,
+        damage_probability: float = 0.1,
+        region_type: str = "clear",
+        region_probability: float = 0.9,
+    ):
         self.clean_probability = clean_probability
         self.damage_probability_value = damage_probability
+        self.region_type = region_type
+        self.region_probability = region_probability
 
     def encode_images(self, images, batch_size=1):
         return np.ones((len(images), 512), dtype=np.float32)
@@ -32,6 +41,12 @@ class FixedVisionRuntime:
 
     def damage_probability(self, image_features):
         return self.damage_probability_value
+
+    def region_probabilities(self, image_features):
+        label_order = ("clear", "dirt", "scratch", "dent", "paint_chip", "rust", "broken_part")
+        output = np.full((len(image_features), len(label_order)), 0.01, dtype=np.float32)
+        output[:, label_order.index(self.region_type)] = self.region_probability
+        return output / output.sum(axis=1, keepdims=True)
 
 
 def image_upload(name: str = "car.jpg") -> SimpleUploadedFile:
@@ -59,6 +74,24 @@ class DatasetTests(TestCase):
         self.assertEqual(report["exact_duplicates_removed"], 23)
         self.assertEqual(report["conflicting_duplicates"], 0)
         self.assertEqual(report["test_csv_missing"], 230)
+
+
+class LocalizationTests(TestCase):
+    def test_scan_grid_reaches_every_image_edge(self):
+        boxes = scan_boxes(1000, 600, columns=4, rows=3, window_ratio=0.42)
+
+        self.assertEqual(len(boxes), 12)
+        self.assertEqual(min(box.left for box in boxes), 0)
+        self.assertEqual(min(box.top for box in boxes), 0)
+        self.assertEqual(max(box.right for box in boxes), 1000)
+        self.assertEqual(max(box.bottom for box in boxes), 600)
+
+    def test_overlap_is_symmetric(self):
+        first = ScanBox(0, 0, 60, 60)
+        second = ScanBox(30, 0, 90, 60)
+
+        self.assertAlmostEqual(intersection_over_union(first, second), 1 / 3)
+        self.assertEqual(intersection_over_union(first, second), intersection_over_union(second, first))
 
 
 class PredictionViewTests(TestCase):
@@ -95,7 +128,7 @@ class PredictionViewTests(TestCase):
     @patch("ml_model.views.load_model")
     def test_heavy_dirt_withholds_integrity_claim(self, mocked_load_model, mocked_vision):
         mocked_load_model.return_value = artifact(0.05)
-        mocked_vision.return_value = FixedVisionRuntime(0.01)
+        mocked_vision.return_value = FixedVisionRuntime(0.01, region_type="dirt")
 
         response = self.client.post(reverse("predict"), {"image": image_upload()})
         payload = response.json()
@@ -105,12 +138,18 @@ class PredictionViewTests(TestCase):
         self.assertIsNone(payload["intact"])
         self.assertIsNone(payload["intact_score"])
         self.assertEqual(payload["integrity_status"], "inconclusive")
+        self.assertGreater(len(payload["regions"]), 0)
+        self.assertTrue(all(region["type"] == "dirt" for region in payload["regions"]))
 
     @patch("ml_model.views.load_vision_runtime")
     @patch("ml_model.views.load_model")
     def test_obvious_damage_overrides_dirt_gate(self, mocked_load_model, mocked_vision):
         mocked_load_model.return_value = artifact(0.05)
-        mocked_vision.return_value = FixedVisionRuntime(0.1, damage_probability=0.8)
+        mocked_vision.return_value = FixedVisionRuntime(
+            0.1,
+            damage_probability=0.8,
+            region_type="broken_part",
+        )
 
         response = self.client.post(reverse("predict"), {"image": image_upload()})
         payload = response.json()
@@ -119,6 +158,7 @@ class PredictionViewTests(TestCase):
         self.assertFalse(payload["intact"])
         self.assertEqual(payload["intact_score"], 20.0)
         self.assertEqual(payload["integrity_status"], "possible_damage")
+        self.assertTrue(any(region["type"] == "broken_part" for region in payload["regions"]))
 
     @patch("ml_model.views.load_model")
     def test_health_exposes_training_metadata(self, mocked_load_model):

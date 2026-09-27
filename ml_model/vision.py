@@ -25,6 +25,24 @@ DAMAGE_PROMPTS = (
     "a crashed car with visible collision damage and broken panels",
     "a damaged car with dents, scratches, broken lights, or missing parts",
 )
+REGION_PROMPTS = (
+    "clean intact car paint with an even glossy surface",
+    "car body covered in dirt mud dust grime or road salt",
+    "a visible scratch scrape or scuff on a car body panel",
+    "a dented or deformed car body panel",
+    "chipped cracked or peeling automotive paint",
+    "rust or corrosion on a car body panel",
+    "a broken cracked or missing exterior car part",
+)
+REGION_LABELS = (
+    "clear",
+    "dirt",
+    "scratch",
+    "dent",
+    "paint_chip",
+    "rust",
+    "broken_part",
+)
 
 
 class VisionRuntime:
@@ -37,6 +55,7 @@ class VisionRuntime:
         self.model.eval()
         self._cleanliness_text_features = self.encode_texts(CLEAN_PROMPTS + DIRTY_PROMPTS)
         self._damage_text_features = self.encode_texts(INTACT_PROMPTS + DAMAGE_PROMPTS)
+        self._region_text_features = self.encode_texts(REGION_PROMPTS)
 
     @staticmethod
     def _resolve_device(device_name: str) -> torch.device:
@@ -96,3 +115,13 @@ class VisionRuntime:
             self._damage_text_features,
             len(INTACT_PROMPTS),
         )
+
+    def region_probabilities(self, image_features: np.ndarray) -> np.ndarray:
+        features = torch.from_numpy(image_features).to(self.device)
+        if features.ndim == 1:
+            features = features.reshape(1, -1)
+        with torch.inference_mode():
+            scale = self.model.logit_scale.exp().clamp(max=100)
+            logits = scale * features @ self._region_text_features.T
+            probabilities = logits.softmax(dim=-1)
+        return probabilities.cpu().numpy().astype(np.float32)
