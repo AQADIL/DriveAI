@@ -1,447 +1,296 @@
-<!DOCTYPE html>
-<html lang="ru">
+<!doctype html>
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>inDrive AI: Check Car Condition</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DriveAI — Car condition check</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            color-scheme: dark;
+            --bg: #07110e;
+            --panel: rgba(15, 31, 25, 0.88);
+            --line: rgba(255, 255, 255, 0.12);
+            --text: #f4fff9;
+            --muted: #9db1a7;
+            --lime: #a7f432;
+            --lime-dark: #152407;
+            --danger: #ff796f;
         }
+
+        * { box-sizing: border-box; }
 
         body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f4;
-            padding: 20px;
-            line-height: 1.6;
+            min-height: 100vh;
+            margin: 0;
+            padding: 32px 18px;
+            display: grid;
+            place-items: center;
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            color: var(--text);
+            background:
+                radial-gradient(circle at 12% 15%, rgba(167, 244, 50, 0.16), transparent 29rem),
+                radial-gradient(circle at 86% 85%, rgba(48, 180, 128, 0.12), transparent 26rem),
+                var(--bg);
         }
 
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        .shell {
+            width: min(100%, 880px);
+            border: 1px solid var(--line);
+            border-radius: 28px;
+            padding: clamp(24px, 5vw, 54px);
+            background: var(--panel);
+            box-shadow: 0 28px 90px rgba(0, 0, 0, 0.42);
+            backdrop-filter: blur(18px);
+        }
+
+        .eyebrow {
+            margin: 0 0 12px;
+            color: var(--lime);
+            font-size: 0.78rem;
+            font-weight: 800;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
         }
 
         h1 {
-            text-align: center;
-            color: #333;
-            margin-bottom: 30px;
-            font-size: 2.2em;
-            font-weight: bold;
+            max-width: 700px;
+            margin: 0;
+            font-size: clamp(2.2rem, 6vw, 4.8rem);
+            line-height: 0.98;
+            letter-spacing: -0.055em;
         }
 
-        .upload-area {
-            border: 3px dashed #007bff;
-            border-radius: 10px;
-            padding: 40px;
+        .intro {
+            max-width: 650px;
+            margin: 20px 0 32px;
+            color: var(--muted);
+            font-size: 1.03rem;
+            line-height: 1.65;
+        }
+
+        .drop-zone {
+            display: grid;
+            place-items: center;
+            min-height: 230px;
+            padding: 30px;
+            border: 1.5px dashed rgba(167, 244, 50, 0.5);
+            border-radius: 20px;
             text-align: center;
-            margin-bottom: 30px;
-            background-color: #f8f9fa;
-            transition: background-color 0.3s ease, border-color 0.3s ease;
             cursor: pointer;
+            background: rgba(167, 244, 50, 0.035);
+            transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
         }
 
-        .upload-area:hover {
-            background-color: #e9f0ff;
-            border-color: #0056b3;
-        }
-
-        .upload-area.dragover {
-            background-color: #e9f0ff;
-            border-color: #0056b3;
-            transform: scale(1.02);
-        }
-
-        .upload-text {
-            color: #007bff;
-            font-size: 1.2em;
-            margin-bottom: 10px;
-        }
-
-        .upload-hint {
-            color: #666;
-            font-size: 0.9em;
-        }
-
-        #fileInput {
-            display: none;
-        }
-
-        .preview-container {
-            text-align: center;
-            margin: 20px 0;
-        }
-
-        .preview-image {
-            max-width: 300px;
-            max-height: 300px;
-            border-radius: 10px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-            transition: transform 0.3s ease;
-        }
-
-        .preview-image:hover {
-            transform: scale(1.05);
-        }
-
-        .predict-button {
-            background-color: #28a745;
-            color: white;
-            border: none;
-            padding: 15px 30px;
-            font-size: 1.1em;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: background-color 0.3s ease, transform 0.2s ease;
-            margin: 20px auto;
-            display: block;
-            font-weight: bold;
-        }
-
-        .predict-button:hover {
-            background-color: #218838;
+        .drop-zone:hover,
+        .drop-zone.is-dragging {
+            border-color: var(--lime);
+            background: rgba(167, 244, 50, 0.085);
             transform: translateY(-2px);
         }
 
-        .predict-button:disabled {
-            background-color: #6c757d;
-            cursor: not-allowed;
-            transform: none;
-        }
+        .drop-zone strong { display: block; font-size: 1.12rem; }
+        .drop-zone span { display: block; margin-top: 8px; color: var(--muted); }
+        .drop-zone input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 
-        .loading {
+        .preview {
             display: none;
-            text-align: center;
-            margin: 20px 0;
+            width: 100%;
+            max-height: 420px;
+            margin-top: 20px;
+            object-fit: contain;
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            background: #030806;
         }
 
-        .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #007bff;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 10px;
+        .actions { display: flex; gap: 12px; margin-top: 20px; }
+
+        button {
+            flex: 1;
+            min-height: 52px;
+            border: 0;
+            border-radius: 14px;
+            color: var(--lime-dark);
+            background: var(--lime);
+            font: inherit;
+            font-weight: 850;
+            cursor: pointer;
+            transition: filter 150ms ease, transform 150ms ease;
         }
 
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+        button:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
+        button:disabled { cursor: not-allowed; filter: grayscale(0.9); opacity: 0.45; }
 
-        .result-container {
-            margin-top: 30px;
+        .status,
+        .error,
+        .results { display: none; margin-top: 22px; }
+
+        .status { color: var(--muted); text-align: center; }
+        .error { padding: 15px 17px; border: 1px solid rgba(255, 121, 111, 0.35); border-radius: 14px; color: #ffd4d0; background: rgba(255, 121, 111, 0.1); }
+
+        .result-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+
+        .result-card {
             padding: 20px;
-            border-radius: 10px;
-            display: none;
+            border: 1px solid var(--line);
+            border-radius: 17px;
+            background: rgba(255, 255, 255, 0.035);
         }
 
-        .result-success {
-            background-color: #d4edda;
-            border: 1px solid #c3e6cb;
-            color: #155724;
-        }
-
-        .result-warning {
-            background-color: #fff3cd;
-            border: 1px solid #ffeaa7;
-            color: #856404;
-        }
-
-        .result-danger {
-            background-color: #f8d7da;
-            border: 1px solid #f5c6cb;
-            color: #721c24;
-        }
-
-        .result-title {
-            font-size: 1.3em;
-            font-weight: bold;
-            margin-bottom: 15px;
-            text-align: center;
-        }
-
-        .result-item {
-            margin: 10px 0;
-            padding: 10px;
-            border-radius: 5px;
-            background-color: rgba(255, 255, 255, 0.7);
-        }
-
-        .badge {
-            padding: 5px 12px;
-            border-radius: 20px;
-            font-weight: bold;
-            font-size: 0.9em;
-            margin-left: 10px;
-        }
-
-        .badge-success {
-            background-color: #28a745;
-            color: white;
-        }
-
-        .badge-danger {
-            background-color: #dc3545;
-            color: white;
-        }
-
-        .confidence-bar {
-            background-color: #e9ecef;
-            border-radius: 10px;
-            height: 20px;
-            margin: 10px 0;
-            overflow: hidden;
-        }
-
-        .confidence-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #dc3545 0%, #ffc107 50%, #28a745 100%);
-            border-radius: 10px;
-            transition: width 0.5s ease;
-        }
+        .result-label { color: var(--muted); font-size: 0.8rem; letter-spacing: 0.09em; text-transform: uppercase; }
+        .result-value { margin: 8px 0 14px; font-size: 1.45rem; font-weight: 850; }
+        .meter { height: 7px; overflow: hidden; border-radius: 99px; background: rgba(255, 255, 255, 0.1); }
+        .meter-fill { height: 100%; border-radius: inherit; background: var(--lime); transition: width 420ms ease; }
+        .score { margin-top: 7px; color: var(--muted); font-size: 0.82rem; }
 
         .explanation {
-            margin-top: 15px;
-            padding: 15px;
-            background-color: rgba(255, 255, 255, 0.8);
-            border-radius: 5px;
-            font-style: italic;
-            border-left: 4px solid #007bff;
+            margin: 14px 0 0;
+            padding: 18px 20px;
+            border-left: 3px solid var(--lime);
+            border-radius: 0 14px 14px 0;
+            color: #dcebe3;
+            background: rgba(167, 244, 50, 0.055);
+            line-height: 1.55;
         }
 
-        .error-message {
-            background-color: #f8d7da;
-            color: #721c24;
-            padding: 15px;
-            border-radius: 5px;
-            margin: 20px 0;
-            border: 1px solid #f5c6cb;
-        }
+        .disclaimer { margin: 20px 0 0; color: #7f958a; font-size: 0.82rem; line-height: 1.5; }
 
-        @media (max-width: 600px) {
-            .container {
-                padding: 20px;
-            }
-
-            h1 {
-                font-size: 1.8em;
-            }
-
-            .upload-area {
-                padding: 30px 20px;
-            }
-
-            .predict-button {
-                width: 100%;
-                padding: 18px;
-            }
+        @media (max-width: 620px) {
+            .shell { border-radius: 20px; }
+            .result-grid { grid-template-columns: 1fr; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>inDrive AI: Check Car Condition</h1>
-        
-        <div class="upload-area" onclick="document.getElementById('fileInput').click()">
-            <div class="upload-text">📸 Нажмите или перетащите фото автомобиля</div>
-            <div class="upload-hint">Поддерживаемые форматы: JPG, PNG, GIF (макс. 5MB)</div>
-        </div>
-        
-        <input type="file" id="fileInput" accept="image/*" onchange="previewImage()">
-        
-        <div class="preview-container" id="previewContainer">
-            <img id="previewImage" class="preview-image" style="display: none;">
-        </div>
-        
-        <button class="predict-button" id="predictButton" onclick="predictImage()" disabled>
-            🔍 Анализировать фото
-        </button>
-        
-        <div class="loading" id="loading">
-            <div class="spinner"></div>
-            <div>Анализируем изображение...</div>
-        </div>
-        
-        <div class="result-container" id="resultContainer">
-            <div class="result-title">Результаты анализа</div>
-            <div id="resultContent"></div>
-        </div>
-    </div>
+    <main class="shell">
+        <p class="eyebrow">DriveAI vision check</p>
+        <h1>Check a car before the next ride.</h1>
+        <p class="intro">Upload one clear exterior photo. The trained model estimates cleanliness and visible body integrity from the image.</p>
+
+        <form id="predictionForm" data-predict-url="{% url 'predict' %}" data-max-bytes="{{ max_image_bytes }}">
+            {% csrf_token %}
+            <label class="drop-zone" id="dropZone" for="imageInput">
+                <span>
+                    <strong>Drop a car photo here or browse</strong>
+                    <span>{{ allowed_formats }} · up to {{ max_image_mb }} MB</span>
+                </span>
+                <input id="imageInput" name="image" type="file" accept="image/*" required>
+            </label>
+            <img class="preview" id="preview" alt="Selected car preview">
+            <div class="actions">
+                <button id="analyzeButton" type="submit" disabled>Analyze photo</button>
+            </div>
+        </form>
+
+        <p class="status" id="status" role="status">Analyzing the image…</p>
+        <div class="error" id="error" role="alert"></div>
+
+        <section class="results" id="results" aria-live="polite">
+            <div class="result-grid">
+                <article class="result-card">
+                    <div class="result-label">Cleanliness</div>
+                    <div class="result-value" id="cleanValue"></div>
+                    <div class="meter"><div class="meter-fill" id="cleanMeter"></div></div>
+                    <div class="score" id="cleanScore"></div>
+                </article>
+                <article class="result-card">
+                    <div class="result-label">Body integrity</div>
+                    <div class="result-value" id="intactValue"></div>
+                    <div class="meter"><div class="meter-fill" id="intactMeter"></div></div>
+                    <div class="score" id="intactScore"></div>
+                </article>
+            </div>
+            <p class="explanation" id="explanation"></p>
+        </section>
+
+        <p class="disclaimer">Model scores are estimates, not a safety inspection. Use multiple well-lit angles and a qualified inspector for consequential decisions.</p>
+    </main>
 
     <script>
+        const form = document.getElementById("predictionForm");
+        const fileInput = document.getElementById("imageInput");
+        const dropZone = document.getElementById("dropZone");
+        const preview = document.getElementById("preview");
+        const analyzeButton = document.getElementById("analyzeButton");
+        const status = document.getElementById("status");
+        const errorBox = document.getElementById("error");
+        const results = document.getElementById("results");
         let selectedFile = null;
 
-        // Обработка drag and drop
-        const uploadArea = document.querySelector('.upload-area');
-        
-        uploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadArea.classList.add('dragover');
-        });
-        
-        uploadArea.addEventListener('dragleave', () => {
-            uploadArea.classList.remove('dragover');
-        });
-        
-        uploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            uploadArea.classList.remove('dragover');
-            
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                const file = files[0];
-                if (file.type.startsWith('image/')) {
-                    selectedFile = file;
-                    previewImage(file);
-                } else {
-                    alert('Пожалуйста, выберите файл изображения');
-                }
-            }
-        });
-
-        function previewImage(file) {
-            const fileInput = document.getElementById('fileInput');
-            const previewImage = document.getElementById('previewImage');
-            const previewContainer = document.getElementById('previewContainer');
-            const predictButton = document.getElementById('predictButton');
-            
-            if (!file) {
-                file = fileInput.files[0];
-            }
-            
-            if (file) {
-                // Проверяем размер файла (5MB)
-                if (file.size > 5 * 1024 * 1024) {
-                    alert('Размер файла не должен превышать 5MB');
-                    return;
-                }
-                
-                selectedFile = file;
-                
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    previewImage.src = e.target.result;
-                    previewImage.style.display = 'block';
-                    predictButton.disabled = false;
-                };
-                reader.readAsDataURL(file);
-            }
+        function showError(message) {
+            errorBox.textContent = message;
+            errorBox.style.display = "block";
+            results.style.display = "none";
         }
 
-        async function predictImage() {
-            if (!selectedFile) {
-                alert('Пожалуйста, выберите изображение');
+        function selectFile(file) {
+            errorBox.style.display = "none";
+            const maxBytes = Number(form.dataset.maxBytes);
+            if (!file || !file.type.startsWith("image/")) {
+                selectedFile = null;
+                analyzeButton.disabled = true;
+                showError("Choose a valid image file.");
                 return;
             }
+            if (file.size > maxBytes) {
+                selectedFile = null;
+                analyzeButton.disabled = true;
+                showError("The selected image is too large.");
+                return;
+            }
+            selectedFile = file;
+            preview.src = URL.createObjectURL(file);
+            preview.style.display = "block";
+            analyzeButton.disabled = false;
+        }
 
-            const predictButton = document.getElementById('predictButton');
-            const loading = document.getElementById('loading');
-            const resultContainer = document.getElementById('resultContainer');
-            
-            // Показываем загрузку
-            predictButton.disabled = true;
-            loading.style.display = 'block';
-            resultContainer.style.display = 'none';
-            
+        fileInput.addEventListener("change", () => selectFile(fileInput.files[0]));
+        dropZone.addEventListener("dragover", (event) => {
+            event.preventDefault();
+            dropZone.classList.add("is-dragging");
+        });
+        dropZone.addEventListener("dragleave", () => dropZone.classList.remove("is-dragging"));
+        dropZone.addEventListener("drop", (event) => {
+            event.preventDefault();
+            dropZone.classList.remove("is-dragging");
+            selectFile(event.dataTransfer.files[0]);
+        });
+
+        form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            if (!selectedFile) return;
+
+            analyzeButton.disabled = true;
+            status.style.display = "block";
+            errorBox.style.display = "none";
+            results.style.display = "none";
+
+            const body = new FormData();
+            body.append("image", selectedFile);
             try {
-                // Создаем FormData для отправки файла
-                const formData = new FormData();
-                formData.append('image', selectedFile);
-                
-                // Отправляем POST запрос
-                const response = await fetch('/predict/', {
-                    method: 'POST',
-                    body: formData
+                const response = await fetch(form.dataset.predictUrl, {
+                    method: "POST",
+                    headers: { "X-CSRFToken": form.elements.csrfmiddlewaretoken.value },
+                    body,
                 });
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                    displayResults(data);
-                } else {
-                    displayError(data.error || 'Произошла ошибка при анализе изображения');
-                }
-                
-            } catch (error) {
-                displayError('Ошибка соединения с сервером: ' + error.message);
+                const payload = await response.json();
+                if (!response.ok) throw new Error(payload.error || "The analysis request failed.");
+
+                document.getElementById("cleanValue").textContent = payload.clean ? "Clean" : "Needs cleaning";
+                document.getElementById("intactValue").textContent = payload.intact ? "No damage detected" : "Possible damage";
+                document.getElementById("cleanMeter").style.width = `${payload.clean_score}%`;
+                document.getElementById("intactMeter").style.width = `${payload.intact_score}%`;
+                document.getElementById("cleanScore").textContent = `Clean score: ${payload.clean_score}%`;
+                document.getElementById("intactScore").textContent = `Intact score: ${payload.intact_score}%`;
+                document.getElementById("explanation").textContent = payload.explanation;
+                results.style.display = "block";
+            } catch (requestError) {
+                showError(requestError.message);
             } finally {
-                // Скрываем загрузку
-                predictButton.disabled = false;
-                loading.style.display = 'none';
+                analyzeButton.disabled = false;
+                status.style.display = "none";
             }
-        }
-
-        function displayResults(data) {
-            const resultContainer = document.getElementById('resultContainer');
-            const resultContent = document.getElementById('resultContent');
-            
-            // Определяем стиль результата
-            let containerClass = 'result-warning';
-            if (data.clean && data.intact) {
-                containerClass = 'result-success';
-            } else if (!data.clean && !data.intact) {
-                containerClass = 'result-danger';
-            }
-            
-            resultContainer.className = `result-container ${containerClass}`;
-            
-            // Формируем HTML с результатами
-            const cleanBadge = data.clean ? 
-                '<span class="badge badge-success">Чистое</span>' : 
-                '<span class="badge badge-danger">Грязное</span>';
-                
-            const intactBadge = data.intact ? 
-                '<span class="badge badge-success">Целое</span>' : 
-                '<span class="badge badge-danger">Повреждено</span>';
-            
-            const confidenceWidth = Math.min(data.confidence, 100);
-            
-            resultContent.innerHTML = `
-                <div class="result-item">
-                    <strong>Состояние чистоты:</strong> ${cleanBadge}
-                </div>
-                <div class="result-item">
-                    <strong>Целостность кузова:</strong> ${intactBadge}
-                </div>
-                <div class="result-item">
-                    <strong>Уверенность модели:</strong> ${data.confidence}%
-                    <div class="confidence-bar">
-                        <div class="confidence-fill" style="width: ${confidenceWidth}%"></div>
-                    </div>
-                </div>
-                <div class="explanation">
-                    <strong>💡 Рекомендация:</strong><br>
-                    ${data.explanation}
-                </div>
-            `;
-            
-            resultContainer.style.display = 'block';
-            
-            // Анимируем появление
-            resultContainer.style.opacity = '0';
-            resultContainer.style.transform = 'translateY(20px)';
-            setTimeout(() => {
-                resultContainer.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
-                resultContainer.style.opacity = '1';
-                resultContainer.style.transform = 'translateY(0)';
-            }, 100);
-        }
-
-        function displayError(message) {
-            const resultContainer = document.getElementById('resultContainer');
-            const resultContent = document.getElementById('resultContent');
-            
-            resultContainer.className = 'result-container';
-            resultContent.innerHTML = `<div class="error-message">❌ ${message}</div>`;
-            resultContainer.style.display = 'block';
-        }
+        });
     </script>
 </body>
 </html>

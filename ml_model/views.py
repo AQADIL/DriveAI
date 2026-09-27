@@ -12,7 +12,15 @@ from .forms import PredictionUploadForm
 
 
 def home(request):
-    return render(request, "ml_model/home.html")
+    return render(
+        request,
+        "ml_model/home.html",
+        {
+            "max_image_bytes": settings.MAX_IMAGE_BYTES,
+            "max_image_mb": f"{settings.MAX_IMAGE_BYTES / (1024 * 1024):g}",
+            "allowed_formats": ", ".join(sorted(settings.ALLOWED_IMAGE_FORMATS)),
+        },
+    )
 
 
 @lru_cache(maxsize=1)
