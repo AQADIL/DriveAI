@@ -3,301 +3,171 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>DriveAI — Car condition check</title>
+    <meta name="theme-color" content="#080b10">
+    <title>DriveAI — Visual vehicle inspection</title>
     <style>
         :root {
             color-scheme: dark;
-            --bg: #07110e;
-            --panel: rgba(15, 31, 25, 0.88);
-            --line: rgba(255, 255, 255, 0.12);
-            --text: #f4fff9;
-            --muted: #9db1a7;
-            --lime: #a7f432;
-            --lime-dark: #152407;
-            --danger: #ff796f;
+            --bg: #080b10; --panel: #0f141c; --surface: #19212c; --line: rgba(255,255,255,.09);
+            --line-strong: rgba(255,255,255,.16); --text: #f5f7fa; --muted: #8e9aaa; --muted-strong: #b6c0cc;
+            --accent: #b8ff3d; --accent-dark: #172603; --danger: #ff5c6c; --success: #65e69a;
+            --dirt: #f4bd50; --scratch: #ff5c9a; --dent: #8b7cff; --paint-chip: #31d7ff; --rust: #ff7a45; --broken-part: #ff435b;
+            --shadow: 0 26px 80px rgba(0,0,0,.35);
         }
-
         * { box-sizing: border-box; }
-
-        body {
-            min-height: 100vh;
-            margin: 0;
-            padding: 32px 18px;
-            display: grid;
-            place-items: center;
-            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            color: var(--text);
-            background:
-                radial-gradient(circle at 12% 15%, rgba(167, 244, 50, 0.16), transparent 29rem),
-                radial-gradient(circle at 86% 85%, rgba(48, 180, 128, 0.12), transparent 26rem),
-                var(--bg);
-        }
-
-        .shell {
-            width: min(100%, 880px);
-            border: 1px solid var(--line);
-            border-radius: 28px;
-            padding: clamp(24px, 5vw, 54px);
-            background: var(--panel);
-            box-shadow: 0 28px 90px rgba(0, 0, 0, 0.42);
-            backdrop-filter: blur(18px);
-        }
-
-        .eyebrow {
-            margin: 0 0 12px;
-            color: var(--lime);
-            font-size: 0.78rem;
-            font-weight: 800;
-            letter-spacing: 0.16em;
-            text-transform: uppercase;
-        }
-
-        h1 {
-            max-width: 700px;
-            margin: 0;
-            font-size: clamp(2.2rem, 6vw, 4.8rem);
-            line-height: 0.98;
-            letter-spacing: -0.055em;
-        }
-
-        .intro {
-            max-width: 650px;
-            margin: 20px 0 32px;
-            color: var(--muted);
-            font-size: 1.03rem;
-            line-height: 1.65;
-        }
-
-        .drop-zone {
-            display: grid;
-            place-items: center;
-            min-height: 230px;
-            padding: 30px;
-            border: 1.5px dashed rgba(167, 244, 50, 0.5);
-            border-radius: 20px;
-            text-align: center;
-            cursor: pointer;
-            background: rgba(167, 244, 50, 0.035);
-            transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
-        }
-
-        .drop-zone:hover,
-        .drop-zone.is-dragging {
-            border-color: var(--lime);
-            background: rgba(167, 244, 50, 0.085);
-            transform: translateY(-2px);
-        }
-
-        .drop-zone strong { display: block; font-size: 1.12rem; }
-        .drop-zone span { display: block; margin-top: 8px; color: var(--muted); }
-        .drop-zone input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-
-        .preview {
-            display: none;
-            width: 100%;
-            max-height: 420px;
-            margin-top: 20px;
-            object-fit: contain;
-            border: 1px solid var(--line);
-            border-radius: 18px;
-            background: #030806;
-        }
-
-        .actions { display: flex; gap: 12px; margin-top: 20px; }
-
-        button {
-            flex: 1;
-            min-height: 52px;
-            border: 0;
-            border-radius: 14px;
-            color: var(--lime-dark);
-            background: var(--lime);
-            font: inherit;
-            font-weight: 850;
-            cursor: pointer;
-            transition: filter 150ms ease, transform 150ms ease;
-        }
-
-        button:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
-        button:disabled { cursor: not-allowed; filter: grayscale(0.9); opacity: 0.45; }
-
-        .status,
-        .error,
-        .results { display: none; margin-top: 22px; }
-
-        .status { color: var(--muted); text-align: center; }
-        .error { padding: 15px 17px; border: 1px solid rgba(255, 121, 111, 0.35); border-radius: 14px; color: #ffd4d0; background: rgba(255, 121, 111, 0.1); }
-
-        .result-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
-
-        .result-card {
-            padding: 20px;
-            border: 1px solid var(--line);
-            border-radius: 17px;
-            background: rgba(255, 255, 255, 0.035);
-        }
-
-        .result-label { color: var(--muted); font-size: 0.8rem; letter-spacing: 0.09em; text-transform: uppercase; }
-        .result-value { margin: 8px 0 14px; font-size: 1.45rem; font-weight: 850; }
-        .meter { height: 7px; overflow: hidden; border-radius: 99px; background: rgba(255, 255, 255, 0.1); }
-        .meter-fill { height: 100%; border-radius: inherit; background: var(--lime); transition: width 420ms ease; }
-        .score { margin-top: 7px; color: var(--muted); font-size: 0.82rem; }
-
-        .explanation {
-            margin: 14px 0 0;
-            padding: 18px 20px;
-            border-left: 3px solid var(--lime);
-            border-radius: 0 14px 14px 0;
-            color: #dcebe3;
-            background: rgba(167, 244, 50, 0.055);
-            line-height: 1.55;
-        }
-
-        .disclaimer { margin: 20px 0 0; color: #7f958a; font-size: 0.82rem; line-height: 1.5; }
-
-        @media (max-width: 620px) {
-            .shell { border-radius: 20px; }
-            .result-grid { grid-template-columns: 1fr; }
-        }
+        html { scroll-behavior: smooth; }
+        body { min-height: 100vh; margin: 0; color: var(--text); background: radial-gradient(circle at 78% -12%,rgba(82,217,255,.09),transparent 32rem),radial-gradient(circle at -8% 30%,rgba(184,255,61,.08),transparent 30rem),var(--bg); font-family: Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; -webkit-font-smoothing: antialiased; }
+        button,input { font: inherit; } button { color: inherit; } [hidden] { display: none !important; }
+        .app-header { height: 76px; padding: 0 clamp(20px,4vw,64px); display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); background: rgba(8,11,16,.82); backdrop-filter: blur(18px); position: sticky; top: 0; z-index: 30; }
+        .brand { display: flex; align-items: center; gap: 11px; font-weight: 850; letter-spacing: -.04em; }
+        .brand-mark { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; color: #0a0d08; background: var(--accent); box-shadow: 0 0 32px rgba(184,255,61,.18); }
+        .brand-mark svg { width: 20px; height: 20px; } .brand-name { font-size: 1.08rem; } .brand-name span { color: var(--accent); }
+        .system-state { display: flex; align-items: center; gap: 9px; color: var(--muted-strong); font-size: .78rem; }
+        .state-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); box-shadow: 0 0 13px rgba(101,230,154,.65); }
+        .page { width: min(1480px,calc(100% - 40px)); margin: 0 auto; padding: clamp(42px,7vw,86px) 0 44px; }
+        .hero { display: grid; grid-template-columns: minmax(0,1.4fr) minmax(300px,.6fr); gap: 48px; align-items: end; margin-bottom: 38px; }
+        .eyebrow { margin: 0 0 16px; color: var(--accent); font-size: .73rem; font-weight: 850; letter-spacing: .19em; text-transform: uppercase; }
+        h1 { max-width: 860px; margin: 0; font-size: clamp(2.8rem,6.5vw,6.8rem); line-height: .88; letter-spacing: -.072em; } h1 .muted-line { color: #687382; }
+        .hero-copy { max-width: 720px; margin: 24px 0 0; color: var(--muted-strong); font-size: clamp(1rem,1.6vw,1.18rem); line-height: 1.7; }
+        .capability-list { display: grid; gap: 9px; }
+        .capability { min-height: 58px; padding: 0 17px; display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--line); border-radius: 14px; color: var(--muted-strong); background: rgba(255,255,255,.025); font-size: .82rem; }
+        .capability strong { color: var(--text); font-size: .86rem; } .capability-index { color: var(--accent); font-weight: 800; font-variant-numeric: tabular-nums; }
+        .workspace,.results { overflow: hidden; border: 1px solid var(--line); border-radius: 24px; background: rgba(15,20,28,.94); box-shadow: var(--shadow); }
+        .workspace-bar { min-height: 62px; padding: 0 20px; display: flex; align-items: center; justify-content: space-between; gap: 18px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.018); }
+        .workspace-title { display: flex; align-items: center; gap: 11px; font-size: .84rem; font-weight: 760; }
+        .workspace-icon { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 9px; color: var(--accent); }
+        .workspace-icon svg { width: 15px; height: 15px; } .workspace-meta { color: var(--muted); font-size: .75rem; }
+        .upload-layout { display: grid; grid-template-columns: minmax(320px,.78fr) minmax(0,1.22fr); min-height: 470px; }
+        .upload-panel { padding: clamp(24px,4vw,42px); border-right: 1px solid var(--line); }
+        .section-number { color: var(--accent); font-size: .7rem; font-weight: 850; letter-spacing: .15em; }
+        .panel-heading { margin: 8px 0; font-size: clamp(1.55rem,2.5vw,2.25rem); letter-spacing: -.04em; }
+        .panel-copy { margin: 0 0 24px; color: var(--muted); font-size: .88rem; line-height: 1.6; }
+        .drop-target { min-height: 240px; padding: 28px; display: grid; place-items: center; border: 1px dashed rgba(184,255,61,.36); border-radius: 18px; text-align: center; cursor: pointer; outline: none; background: linear-gradient(rgba(184,255,61,.03),rgba(184,255,61,.03)),repeating-linear-gradient(135deg,transparent,transparent 12px,rgba(255,255,255,.012) 12px,rgba(255,255,255,.012) 24px); transition: border-color .16s,background .16s,transform .16s,box-shadow .16s; }
+        .drop-target:hover,.drop-target:focus-visible,.drop-target.is-dragging { border-color: var(--accent); background-color: rgba(184,255,61,.06); box-shadow: inset 0 0 0 1px rgba(184,255,61,.15),0 12px 38px rgba(0,0,0,.16); transform: translateY(-2px); }
+        .drop-target.is-dragging { transform: scale(1.012); }
+        .upload-symbol { width: 54px; height: 54px; margin: 0 auto 18px; display: grid; place-items: center; border: 1px solid rgba(184,255,61,.25); border-radius: 16px; color: var(--accent); background: rgba(184,255,61,.07); }
+        .upload-symbol svg { width: 24px; height: 24px; } .drop-title { margin: 0; font-weight: 780; }
+        .drop-help { margin: 7px 0 17px; color: var(--muted); font-size: .8rem; line-height: 1.45; }
+        .browse-button { padding: 9px 14px; border: 1px solid var(--line-strong); border-radius: 10px; color: var(--text); background: var(--surface); cursor: pointer; font-size: .78rem; font-weight: 760; }
+        .browse-button:hover { border-color: rgba(184,255,61,.45); } .file-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+        .file-row { margin-top: 14px; padding: 13px 14px; display: flex; align-items: center; gap: 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.025); }
+        .file-type { width: 34px; height: 34px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 9px; color: var(--accent-dark); background: var(--accent); font-size: .62rem; font-weight: 900; }
+        .file-details { min-width: 0; flex: 1; } .file-name { overflow: hidden; color: var(--text); font-size: .8rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+        .file-size { margin-top: 3px; color: var(--muted); font-size: .7rem; }
+        .icon-button { width: 31px; height: 31px; display: grid; place-items: center; flex: 0 0 auto; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); background: transparent; cursor: pointer; }
+        .icon-button:hover { color: var(--danger); border-color: rgba(255,92,108,.35); }
+        .primary-button { width: 100%; min-height: 52px; margin-top: 14px; display: flex; align-items: center; justify-content: center; gap: 10px; border: 0; border-radius: 13px; color: #101600; background: var(--accent); cursor: pointer; font-weight: 880; transition: filter .15s,transform .15s,opacity .15s; }
+        .primary-button:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); } .primary-button:disabled { cursor: not-allowed; opacity: .32; }
+        .button-arrow { font-size: 1.1rem; }
+        .preview-panel { min-width: 0; padding: clamp(24px,4vw,42px); display: flex; flex-direction: column; background: #0b0f15; }
+        .preview-top { display: flex; justify-content: space-between; align-items: center; gap: 18px; margin-bottom: 17px; }
+        .preview-label { color: var(--muted); font-size: .7rem; font-weight: 820; letter-spacing: .14em; text-transform: uppercase; }
+        .preview-status { padding: 7px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: .68rem; }
+        .preview-status.is-ready { color: var(--success); border-color: rgba(101,230,154,.22); background: rgba(101,230,154,.06); }
+        .preview-status.is-running { color: var(--accent); border-color: rgba(184,255,61,.24); background: rgba(184,255,61,.06); }
+        .empty-preview { min-height: 338px; display: grid; place-items: center; flex: 1; border: 1px solid var(--line); border-radius: 18px; color: #5f6977; background: linear-gradient(135deg,rgba(255,255,255,.016),rgba(255,255,255,.004)); }
+        .empty-preview-inner { text-align: center; } .empty-reticle { width: 80px; height: 80px; margin: 0 auto 16px; border: 1px solid #29313c; position: relative; }
+        .empty-reticle::before,.empty-reticle::after { content: ""; position: absolute; background: #29313c; } .empty-reticle::before { width: 112px; height: 1px; top: 39px; left: -17px; } .empty-reticle::after { width: 1px; height: 112px; top: -17px; left: 39px; }
+        .empty-preview p { margin: 0; font-size: .78rem; }
+        .preview-image-wrap { position: relative; min-height: 338px; display: grid; place-items: center; flex: 1; overflow: hidden; border: 1px solid var(--line); border-radius: 18px; background: #05070a; }
+        .preview-image-wrap::before { content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none; background: linear-gradient(90deg,rgba(255,255,255,.028) 1px,transparent 1px),linear-gradient(rgba(255,255,255,.028) 1px,transparent 1px); background-size: 40px 40px; opacity: .22; }
+        .preview-image { max-width: 100%; max-height: 430px; display: block; object-fit: contain; }
+        .preview-image-wrap.is-scanning::after { content: ""; position: absolute; z-index: 4; left: 0; right: 0; height: 2px; background: var(--accent); box-shadow: 0 0 20px var(--accent),0 0 55px rgba(184,255,61,.45); animation: scan 1.65s ease-in-out infinite; }
+        @keyframes scan { 0%,100% { top: 8%; opacity: .3; } 50% { top: 92%; opacity: 1; } }
+        .error-box { margin-top: 14px; padding: 13px 15px; border: 1px solid rgba(255,92,108,.28); border-radius: 12px; color: #ffd1d6; background: rgba(255,92,108,.08); font-size: .78rem; line-height: 1.5; }
+        .results { margin-top: 22px; }
+        .results-head { padding: 22px 24px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--line); }
+        .results-kicker { margin: 0 0 5px; color: var(--accent); font-size: .67rem; font-weight: 850; letter-spacing: .15em; text-transform: uppercase; }
+        .results-title { margin: 0; font-size: 1.32rem; letter-spacing: -.035em; } .analysis-id { color: var(--muted); font-family: ui-monospace,SFMono-Regular,Menlo,monospace; font-size: .68rem; }
+        .summary-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); border-bottom: 1px solid var(--line); }
+        .summary-card { padding: 21px 24px; } .summary-card + .summary-card { border-left: 1px solid var(--line); }
+        .summary-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; } .summary-label { color: var(--muted); font-size: .68rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+        .score-number { color: var(--muted-strong); font-size: .78rem; font-variant-numeric: tabular-nums; } .summary-value { margin: 10px 0 14px; font-size: 1.12rem; font-weight: 800; }
+        .meter { height: 4px; overflow: hidden; border-radius: 99px; background: rgba(255,255,255,.08); } .meter-fill { width: 0; height: 100%; border-radius: inherit; background: var(--accent); transition: width .52s cubic-bezier(.2,.7,.2,1); }
+        .inspection-grid { display: grid; grid-template-columns: minmax(0,1.65fr) minmax(310px,.6fr); min-height: 540px; }
+        .visual-column { min-width: 0; padding: 24px; border-right: 1px solid var(--line); background: #0a0e14; }
+        .visual-toolbar { min-height: 36px; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+        .filters { display: flex; flex-wrap: wrap; gap: 7px; } .filter-button { padding: 7px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: transparent; cursor: pointer; font-size: .68rem; font-weight: 720; text-transform: capitalize; }
+        .filter-button:hover,.filter-button.is-active { color: var(--text); border-color: var(--line-strong); background: var(--surface); } .zone-count { color: var(--muted); font-size: .68rem; white-space: nowrap; }
+        .inspection-canvas { position: relative; width: fit-content; max-width: 100%; margin: 0 auto; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: #030507; }
+        .inspection-image { max-width: 100%; max-height: 650px; display: block; object-fit: contain; } .overlay { position: absolute; inset: 0; z-index: 4; width: 100%; height: 100%; overflow: visible; }
+        .region { cursor: crosshair; outline: none; } .region-box { fill: transparent; stroke-width: 3.5; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 5px currentColor); transition: fill .15s,stroke-width .15s,opacity .15s; stroke: currentColor; }
+        .region[data-type="dirt"] { color: var(--dirt); } .region[data-type="scratch"] { color: var(--scratch); } .region[data-type="dent"] { color: var(--dent); } .region[data-type="paint_chip"] { color: var(--paint-chip); } .region[data-type="rust"] { color: var(--rust); } .region[data-type="broken_part"] { color: var(--broken-part); }
+        .region:hover .region-box,.region:focus .region-box,.region.is-active .region-box { fill: color-mix(in srgb,currentColor 16%,transparent); stroke-width: 5; } .region.is-muted { opacity: .08; pointer-events: none; }
+        .region-tooltip { position: absolute; z-index: 8; width: min(230px,calc(100% - 24px)); padding: 12px 13px; border: 1px solid var(--line-strong); border-radius: 11px; background: rgba(12,16,22,.94); box-shadow: 0 14px 34px rgba(0,0,0,.4); backdrop-filter: blur(14px); pointer-events: none; transform: translate(-50%,calc(-100% - 13px)); }
+        .tooltip-type { color: var(--accent); font-size: .62rem; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; } .tooltip-title { margin: 5px 0 3px; font-size: .82rem; font-weight: 800; } .tooltip-score { color: var(--muted); font-size: .68rem; }
+        .findings-column { min-width: 0; display: flex; flex-direction: column; } .findings-head { padding: 21px 20px 15px; border-bottom: 1px solid var(--line); } .findings-head h3 { margin: 0 0 7px; font-size: 1rem; } .findings-head p { margin: 0; color: var(--muted); font-size: .72rem; line-height: 1.5; }
+        .findings-list { padding: 10px; display: grid; gap: 8px; align-content: start; } .finding-card { width: 100%; padding: 14px; border: 1px solid transparent; border-radius: 13px; color: inherit; text-align: left; background: transparent; cursor: pointer; transition: border-color .15s,background .15s; }
+        .finding-card:hover,.finding-card:focus-visible,.finding-card.is-active { border-color: var(--line-strong); background: rgba(255,255,255,.035); outline: none; } .finding-card.is-muted { display: none; }
+        .finding-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; } .finding-name { display: flex; align-items: center; gap: 8px; font-size: .78rem; font-weight: 800; } .finding-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--finding-color); box-shadow: 0 0 10px color-mix(in srgb,var(--finding-color) 55%,transparent); }
+        .finding-confidence { color: var(--muted); font-size: .66rem; font-variant-numeric: tabular-nums; } .finding-description { margin: 8px 0 0; color: var(--muted-strong); font-size: .71rem; line-height: 1.47; } .finding-recommendation { margin: 9px 0 0; padding-top: 9px; border-top: 1px solid var(--line); color: var(--muted); font-size: .68rem; line-height: 1.45; }
+        .empty-findings { margin: 10px; padding: 26px 18px; border: 1px solid var(--line); border-radius: 13px; text-align: center; color: var(--muted); font-size: .75rem; line-height: 1.55; }
+        .explanation-bar { padding: 18px 24px; display: flex; align-items: flex-start; gap: 13px; border-top: 1px solid var(--line); color: var(--muted-strong); background: rgba(184,255,61,.025); font-size: .78rem; line-height: 1.55; }
+        .explanation-mark { width: 21px; height: 21px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; color: var(--accent-dark); background: var(--accent); font-size: .69rem; font-weight: 900; }
+        .legal { margin: 18px 0 0; color: #687382; font-size: .7rem; line-height: 1.55; }
+        @media (max-width:1050px) { .hero { grid-template-columns: 1fr; gap: 30px; } .capability-list { grid-template-columns: repeat(3,1fr); } .capability { align-items: flex-start; flex-direction: column; justify-content: center; gap: 5px; } .upload-layout,.inspection-grid { grid-template-columns: 1fr; } .upload-panel { border-right: 0; border-bottom: 1px solid var(--line); } .visual-column { border-right: 0; border-bottom: 1px solid var(--line); } }
+        @media (max-width:680px) { .app-header { height: 66px; padding: 0 18px; } .system-state span:last-child { display: none; } .page { width: min(100% - 24px,1480px); padding-top: 38px; } h1 { font-size: clamp(2.55rem,15vw,4.4rem); } .capability-list { grid-template-columns: 1fr; } .capability { min-height: 50px; flex-direction: row; align-items: center; } .workspace-bar { align-items: flex-start; flex-direction: column; padding: 15px 18px; } .upload-panel,.preview-panel { padding: 20px; } .drop-target { min-height: 210px; } .summary-grid { grid-template-columns: 1fr; } .summary-card + .summary-card { border-left: 0; border-top: 1px solid var(--line); } .results-head,.visual-toolbar { align-items: flex-start; flex-direction: column; } .visual-column { padding: 14px; } .inspection-image { max-height: 520px; } }
+        @media (prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
     </style>
 </head>
 <body>
-    <main class="shell">
-        <p class="eyebrow">DriveAI vision check</p>
-        <h1>Check a car before the next ride.</h1>
-        <p class="intro">Upload one clear exterior photo. The trained model estimates cleanliness and visible body integrity from the image.</p>
-
-        <form id="predictionForm" data-predict-url="{% url 'predict' %}" data-max-bytes="{{ max_image_bytes }}">
-            {% csrf_token %}
-            <label class="drop-zone" id="dropZone" for="imageInput">
-                <span>
-                    <strong>Drop a car photo here or browse</strong>
-                    <span>{{ allowed_formats }} · up to {{ max_image_mb }} MB</span>
-                </span>
-                <input id="imageInput" name="image" type="file" accept="image/*" required>
-            </label>
-            <img class="preview" id="preview" alt="Selected car preview">
-            <div class="actions">
-                <button id="analyzeButton" type="submit" disabled>Analyze photo</button>
-            </div>
-        </form>
-
-        <p class="status" id="status" role="status">Analyzing the image…</p>
-        <div class="error" id="error" role="alert"></div>
-
-        <section class="results" id="results" aria-live="polite">
-            <div class="result-grid">
-                <article class="result-card">
-                    <div class="result-label">Cleanliness</div>
-                    <div class="result-value" id="cleanValue"></div>
-                    <div class="meter"><div class="meter-fill" id="cleanMeter"></div></div>
-                    <div class="score" id="cleanScore"></div>
-                </article>
-                <article class="result-card">
-                    <div class="result-label">Body integrity</div>
-                    <div class="result-value" id="intactValue"></div>
-                    <div class="meter"><div class="meter-fill" id="intactMeter"></div></div>
-                    <div class="score" id="intactScore"></div>
-                </article>
-            </div>
-            <p class="explanation" id="explanation"></p>
+    <header class="app-header">
+        <div class="brand" aria-label="DriveAI"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 15.5 6.2 9h11.6l2.2 6.5M7 15.5h10M8.2 9l1.5-3h4.6l1.5 3M6.5 18.5h.01M17.5 18.5h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="brand-name">Drive<span>AI</span></span></div>
+        <div class="system-state"><span class="state-dot"></span><span>Vision system online</span></div>
+    </header>
+    <main class="page">
+        <section class="hero">
+            <div><p class="eyebrow">AI-assisted exterior inspection</p><h1>See what needs<br><span class="muted-line">your attention.</span></h1><p class="hero-copy">Upload a clear exterior photo. DriveAI evaluates cleanliness and body integrity, then maps the image areas that influenced its result.</p></div>
+            <div class="capability-list" aria-label="Inspection capabilities"><div class="capability"><span><strong>Condition scoring</strong><br>Cleanliness + integrity</span><span class="capability-index">01</span></div><div class="capability"><span><strong>Visual localization</strong><br>Interactive attention zones</span><span class="capability-index">02</span></div><div class="capability"><span><strong>Action guidance</strong><br>Issue-specific next steps</span><span class="capability-index">03</span></div></div>
         </section>
-
-        <p class="disclaimer">Model scores are estimates, not a safety inspection. Use multiple well-lit angles and a qualified inspector for consequential decisions.</p>
+        <section class="workspace" aria-labelledby="workspaceHeading">
+            <div class="workspace-bar"><div class="workspace-title" id="workspaceHeading"><span class="workspace-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7h3l1.5-2h7L17 7h3v12H4V7Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.8"/></svg></span>New visual inspection</div><div class="workspace-meta">One vehicle · one exterior image · JPEG, PNG or WEBP</div></div>
+            <form id="predictionForm" data-predict-url="{% url 'predict' %}" data-max-bytes="{{ max_image_bytes }}" novalidate>
+                {% csrf_token %}
+                <div class="upload-layout">
+                    <div class="upload-panel">
+                        <span class="section-number">STEP 01</span><h2 class="panel-heading">Add vehicle image</h2><p class="panel-copy">Use a well-lit photo where the complete exterior area you want to inspect is visible.</p>
+                        <div class="drop-target" id="dropZone" role="button" tabindex="0" aria-controls="imageInput" aria-label="Drop a car image or browse for a file"><div><span class="upload-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v5h14v-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><p class="drop-title">Drop your vehicle photo here</p><p class="drop-help">{{ allowed_formats }} · maximum {{ max_image_mb }} MB<br>or paste an image from your clipboard</p><button class="browse-button" id="browseButton" type="button">Choose image</button></div></div>
+                        <input class="file-input" id="imageInput" name="image" type="file" accept="image/jpeg,image/png,image/webp" required>
+                        <div class="file-row" id="fileRow" hidden><span class="file-type" id="fileType">IMG</span><div class="file-details"><div class="file-name" id="fileName"></div><div class="file-size" id="fileSize"></div></div><button class="icon-button" id="removeButton" type="button" aria-label="Remove selected image">×</button></div>
+                        <button class="primary-button" id="analyzeButton" type="submit" disabled><span id="analyzeButtonText">Analyze photo</span><span class="button-arrow" aria-hidden="true">→</span></button><div class="error-box" id="error" role="alert" hidden></div>
+                    </div>
+                    <div class="preview-panel"><div class="preview-top"><span class="preview-label">Source preview</span><span class="preview-status" id="previewStatus">Waiting for image</span></div><div class="empty-preview" id="emptyPreview"><div class="empty-preview-inner"><div class="empty-reticle" aria-hidden="true"></div><p>Your inspection image will appear here</p></div></div><div class="preview-image-wrap" id="previewWrap" hidden><img class="preview-image" id="preview" alt="Selected vehicle for inspection"></div></div>
+                </div>
+            </form>
+        </section>
+        <section class="results" id="results" aria-live="polite" hidden>
+            <div class="results-head"><div><p class="results-kicker">Inspection complete</p><h2 class="results-title">Exterior condition report</h2></div><div class="analysis-id" id="analysisId"></div></div>
+            <div class="summary-grid"><article class="summary-card"><div class="summary-top"><span class="summary-label">Cleanliness</span><span class="score-number" id="cleanScore"></span></div><div class="summary-value" id="cleanValue"></div><div class="meter"><div class="meter-fill" id="cleanMeter"></div></div></article><article class="summary-card"><div class="summary-top"><span class="summary-label">Body integrity</span><span class="score-number" id="intactScore"></span></div><div class="summary-value" id="intactValue"></div><div class="meter"><div class="meter-fill" id="intactMeter"></div></div></article></div>
+            <div class="inspection-grid"><div class="visual-column"><div class="visual-toolbar"><div class="filters" id="filters" aria-label="Filter attention zones"></div><div class="zone-count" id="zoneCount"></div></div><div class="inspection-canvas" id="inspectionCanvas"><img class="inspection-image" id="inspectionImage" alt="Analyzed vehicle with interactive attention zones"><svg class="overlay" id="overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Interactive inspection overlay"></svg><div class="region-tooltip" id="regionTooltip" hidden><div class="tooltip-type" id="tooltipType"></div><div class="tooltip-title" id="tooltipTitle"></div><div class="tooltip-score" id="tooltipScore"></div></div></div></div><aside class="findings-column"><div class="findings-head"><h3>Detected attention zones</h3><p id="localizationNote"></p></div><div class="findings-list" id="findingsList"></div><div class="empty-findings" id="emptyFindings" hidden>No localized issues passed the model thresholds in this image.</div></aside></div>
+            <div class="explanation-bar"><span class="explanation-mark">i</span><span id="explanation"></span></div>
+        </section>
+        <p class="legal">DriveAI provides model estimates, not a mechanical or safety inspection. Confirm consequential findings with multiple well-lit angles and a qualified vehicle inspector.</p>
     </main>
-
     <script>
-        const form = document.getElementById("predictionForm");
-        const fileInput = document.getElementById("imageInput");
-        const dropZone = document.getElementById("dropZone");
-        const preview = document.getElementById("preview");
-        const analyzeButton = document.getElementById("analyzeButton");
-        const status = document.getElementById("status");
-        const errorBox = document.getElementById("error");
-        const results = document.getElementById("results");
-        let selectedFile = null;
-
-        function showError(message) {
-            errorBox.textContent = message;
-            errorBox.style.display = "block";
-            results.style.display = "none";
-        }
-
-        function selectFile(file) {
-            errorBox.style.display = "none";
-            const maxBytes = Number(form.dataset.maxBytes);
-            if (!file || !file.type.startsWith("image/")) {
-                selectedFile = null;
-                analyzeButton.disabled = true;
-                showError("Choose a valid image file.");
-                return;
-            }
-            if (file.size > maxBytes) {
-                selectedFile = null;
-                analyzeButton.disabled = true;
-                showError("The selected image is too large.");
-                return;
-            }
-            selectedFile = file;
-            preview.src = URL.createObjectURL(file);
-            preview.style.display = "block";
-            analyzeButton.disabled = false;
-        }
-
-        fileInput.addEventListener("change", () => selectFile(fileInput.files[0]));
-        dropZone.addEventListener("dragover", (event) => {
-            event.preventDefault();
-            dropZone.classList.add("is-dragging");
-        });
-        dropZone.addEventListener("dragleave", () => dropZone.classList.remove("is-dragging"));
-        dropZone.addEventListener("drop", (event) => {
-            event.preventDefault();
-            dropZone.classList.remove("is-dragging");
-            selectFile(event.dataTransfer.files[0]);
-        });
-
-        form.addEventListener("submit", async (event) => {
-            event.preventDefault();
-            if (!selectedFile) return;
-
-            analyzeButton.disabled = true;
-            status.style.display = "block";
-            errorBox.style.display = "none";
-            results.style.display = "none";
-
-            const body = new FormData();
-            body.append("image", selectedFile);
-            try {
-                const response = await fetch(form.dataset.predictUrl, {
-                    method: "POST",
-                    headers: { "X-CSRFToken": form.elements.csrfmiddlewaretoken.value },
-                    body,
-                });
-                const payload = await response.json();
-                if (!response.ok) throw new Error(payload.error || "The analysis request failed.");
-
-                document.getElementById("cleanValue").textContent = payload.clean ? "Clean" : "Needs cleaning";
-                const integrityLabels = {
-                    intact: "No damage detected",
-                    possible_damage: "Possible damage",
-                    inconclusive: "Inconclusive — clean car first",
-                };
-                document.getElementById("intactValue").textContent = integrityLabels[payload.integrity_status];
-                document.getElementById("cleanMeter").style.width = `${payload.clean_score}%`;
-                document.getElementById("intactMeter").style.width = payload.intact_score === null ? "0%" : `${payload.intact_score}%`;
-                document.getElementById("cleanScore").textContent = `Clean score: ${payload.clean_score}%`;
-                document.getElementById("intactScore").textContent = payload.intact_score === null
-                    ? "Body score withheld until the car is clean"
-                    : `Intact score: ${payload.intact_score}%`;
-                document.getElementById("explanation").textContent = payload.explanation;
-                results.style.display = "block";
-            } catch (requestError) {
-                showError(requestError.message);
-            } finally {
-                analyzeButton.disabled = false;
-                status.style.display = "none";
-            }
-        });
+        const form=document.getElementById("predictionForm"),fileInput=document.getElementById("imageInput"),dropZone=document.getElementById("dropZone"),browseButton=document.getElementById("browseButton"),removeButton=document.getElementById("removeButton"),fileRow=document.getElementById("fileRow"),preview=document.getElementById("preview"),previewWrap=document.getElementById("previewWrap"),emptyPreview=document.getElementById("emptyPreview"),previewStatus=document.getElementById("previewStatus"),analyzeButton=document.getElementById("analyzeButton"),analyzeButtonText=document.getElementById("analyzeButtonText"),errorBox=document.getElementById("error"),results=document.getElementById("results"),overlay=document.getElementById("overlay"),findingsList=document.getElementById("findingsList"),filters=document.getElementById("filters"),tooltip=document.getElementById("regionTooltip");
+        let selectedFile=null,previewUrl=null,dragDepth=0,currentRegions=[];
+        const findingColors={dirt:"var(--dirt)",scratch:"var(--scratch)",dent:"var(--dent)",paint_chip:"var(--paint-chip)",rust:"var(--rust)",broken_part:"var(--broken-part)"};
+        function showError(message){errorBox.textContent=message;errorBox.hidden=false} function clearError(){errorBox.hidden=true;errorBox.textContent=""}
+        function formatBytes(bytes){return bytes<1048576?`${(bytes/1024).toFixed(0)} KB`:`${(bytes/1048576).toFixed(1)} MB`}
+        function syncNativeFileInput(file){try{const transfer=new DataTransfer();transfer.items.add(file);fileInput.files=transfer.files}catch(_){}}
+        function resetSelection(){selectedFile=null;fileInput.value="";if(previewUrl)URL.revokeObjectURL(previewUrl);previewUrl=null;preview.removeAttribute("src");fileRow.hidden=true;previewWrap.hidden=true;emptyPreview.hidden=false;analyzeButton.disabled=true;previewStatus.textContent="Waiting for image";previewStatus.className="preview-status";results.hidden=true;clearError()}
+        function selectFile(file,syncInput=true){clearError();const maxBytes=Number(form.dataset.maxBytes);if(!file||!file.type.startsWith("image/")){showError("Choose a JPEG, PNG, or WEBP image.");return false}if(file.size>maxBytes){showError(`The image is too large. Maximum size is ${formatBytes(maxBytes)}.`);return false}selectedFile=file;if(syncInput)syncNativeFileInput(file);if(previewUrl)URL.revokeObjectURL(previewUrl);previewUrl=URL.createObjectURL(file);preview.src=previewUrl;document.getElementById("fileName").textContent=file.name;document.getElementById("fileSize").textContent=`${formatBytes(file.size)} · ready for analysis`;document.getElementById("fileType").textContent=(file.name.split(".").pop()||"IMG").slice(0,4).toUpperCase();fileRow.hidden=false;emptyPreview.hidden=true;previewWrap.hidden=false;previewStatus.textContent="Image ready";previewStatus.className="preview-status is-ready";analyzeButton.disabled=false;results.hidden=true;return true}
+        function openPicker(){fileInput.click()} browseButton.addEventListener("click",event=>{event.stopPropagation();openPicker()});dropZone.addEventListener("click",event=>{if(!event.target.closest("button"))openPicker()});dropZone.addEventListener("keydown",event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();openPicker()}});removeButton.addEventListener("click",resetSelection);fileInput.addEventListener("change",()=>selectFile(fileInput.files[0],false));
+        function containsFiles(event){return Array.from(event.dataTransfer?.types||[]).includes("Files")} window.addEventListener("dragover",event=>{if(containsFiles(event))event.preventDefault()});window.addEventListener("drop",event=>{if(containsFiles(event))event.preventDefault()});
+        dropZone.addEventListener("dragenter",event=>{if(!containsFiles(event))return;event.preventDefault();dragDepth+=1;dropZone.classList.add("is-dragging")});dropZone.addEventListener("dragover",event=>{if(!containsFiles(event))return;event.preventDefault();event.dataTransfer.dropEffect="copy"});dropZone.addEventListener("dragleave",event=>{if(!containsFiles(event))return;dragDepth=Math.max(0,dragDepth-1);if(!dragDepth)dropZone.classList.remove("is-dragging")});dropZone.addEventListener("drop",event=>{event.preventDefault();event.stopPropagation();dragDepth=0;dropZone.classList.remove("is-dragging");const files=Array.from(event.dataTransfer.files||[]);if(files.length!==1){showError(files.length?"Drop one image at a time.":"No image was found in the drop operation.");return}selectFile(files[0])});
+        window.addEventListener("paste",event=>{const image=Array.from(event.clipboardData?.files||[]).find(file=>file.type.startsWith("image/"));if(image){event.preventDefault();selectFile(image)}});
+        function setLoading(isLoading){analyzeButton.disabled=isLoading||!selectedFile;analyzeButtonText.textContent=isLoading?"Analyzing vehicle…":"Analyze photo";previewWrap.classList.toggle("is-scanning",isLoading);previewStatus.textContent=isLoading?"Vision analysis running":"Image ready";previewStatus.className=isLoading?"preview-status is-running":"preview-status is-ready"}
+        function typeLabel(type){return type.replaceAll("_"," ")}
+        function setActiveRegion(regionId){document.querySelectorAll(".region,.finding-card").forEach(element=>element.classList.toggle("is-active",element.dataset.id===regionId));const region=currentRegions.find(item=>item.id===regionId);if(!region){tooltip.hidden=true;return}document.getElementById("tooltipType").textContent=`${typeLabel(region.type)} · ${region.severity}`;document.getElementById("tooltipTitle").textContent=region.label;document.getElementById("tooltipScore").textContent=`Model confidence ${region.confidence}%`;const centerX=(region.geometry.x+region.geometry.width/2)*100,top=region.geometry.y*100;tooltip.style.left=`${Math.min(88,Math.max(12,centerX))}%`;tooltip.style.top=`${Math.max(18,top)}%`;tooltip.hidden=false}
+        function clearActiveRegion(){document.querySelectorAll(".region,.finding-card").forEach(element=>element.classList.remove("is-active"));tooltip.hidden=true}
+        function applyFilter(type){document.querySelectorAll(".filter-button").forEach(button=>button.classList.toggle("is-active",button.dataset.type===type));document.querySelectorAll(".region,.finding-card").forEach(element=>element.classList.toggle("is-muted",type!=="all"&&element.dataset.type!==type));const visibleCount=type==="all"?currentRegions.length:currentRegions.filter(region=>region.type===type).length;document.getElementById("zoneCount").textContent=`${visibleCount} zone${visibleCount===1?"":"s"} visible`;clearActiveRegion()}
+        function renderFilters(regions){filters.replaceChildren();["all",...new Set(regions.map(region=>region.type))].forEach(type=>{const button=document.createElement("button");button.type="button";button.className="filter-button";button.dataset.type=type;button.textContent=type==="all"?"All zones":typeLabel(type);button.addEventListener("click",()=>applyFilter(type));filters.appendChild(button)});applyFilter("all")}
+        function renderRegions(regions){currentRegions=regions;overlay.replaceChildren();findingsList.replaceChildren();document.getElementById("emptyFindings").hidden=regions.length!==0;regions.forEach(region=>{const group=document.createElementNS("http://www.w3.org/2000/svg","g");group.classList.add("region");group.dataset.id=region.id;group.dataset.type=region.type;group.setAttribute("tabindex","0");group.setAttribute("role","button");group.setAttribute("aria-label",`${region.label}, ${region.confidence}% confidence`);const box=document.createElementNS("http://www.w3.org/2000/svg","rect");box.classList.add("region-box");box.setAttribute("x",String(region.geometry.x*1000));box.setAttribute("y",String(region.geometry.y*1000));box.setAttribute("width",String(region.geometry.width*1000));box.setAttribute("height",String(region.geometry.height*1000));box.setAttribute("rx","18");box.setAttribute("ry","18");group.appendChild(box);group.addEventListener("mouseenter",()=>setActiveRegion(region.id));group.addEventListener("focus",()=>setActiveRegion(region.id));group.addEventListener("mouseleave",clearActiveRegion);group.addEventListener("blur",clearActiveRegion);overlay.appendChild(group);
+            const card=document.createElement("button");card.type="button";card.className="finding-card";card.dataset.id=region.id;card.dataset.type=region.type;card.style.setProperty("--finding-color",findingColors[region.type]);const top=document.createElement("div");top.className="finding-top";const name=document.createElement("span");name.className="finding-name";const dot=document.createElement("span");dot.className="finding-dot";const label=document.createElement("span");label.textContent=region.label;name.append(dot,label);const confidence=document.createElement("span");confidence.className="finding-confidence";confidence.textContent=`${region.confidence}%`;top.append(name,confidence);const description=document.createElement("p");description.className="finding-description";description.textContent=region.description;const recommendation=document.createElement("p");recommendation.className="finding-recommendation";recommendation.textContent=region.recommendation;card.append(top,description,recommendation);card.addEventListener("mouseenter",()=>setActiveRegion(region.id));card.addEventListener("focus",()=>setActiveRegion(region.id));card.addEventListener("mouseleave",clearActiveRegion);card.addEventListener("blur",clearActiveRegion);findingsList.appendChild(card)});renderFilters(regions)}
+        function renderResults(payload){document.getElementById("cleanValue").textContent=payload.clean?"Surface appears clean":"Cleaning recommended";document.getElementById("cleanScore").textContent=`${payload.clean_score}% clean`;document.getElementById("cleanMeter").style.width=`${payload.clean_score}%`;const labels={intact:"No visible damage detected",possible_damage:"Possible exterior damage",inconclusive:"Obscured by contamination"};document.getElementById("intactValue").textContent=labels[payload.integrity_status]||"Unknown";document.getElementById("intactScore").textContent=payload.intact_score===null?"Score withheld":`${payload.intact_score}% intact`;document.getElementById("intactMeter").style.width=payload.intact_score===null?"0%":`${payload.intact_score}%`;document.getElementById("explanation").textContent=payload.explanation;document.getElementById("localizationNote").textContent=payload.localization_note;document.getElementById("analysisId").textContent=`SCAN-${Date.now().toString(36).toUpperCase()}`;document.getElementById("inspectionImage").src=previewUrl;renderRegions(payload.regions||[]);results.hidden=false;results.scrollIntoView({behavior:"smooth",block:"start"})}
+        form.addEventListener("submit",async event=>{event.preventDefault();if(!selectedFile){showError("Choose a vehicle image before starting the analysis.");return}clearError();setLoading(true);results.hidden=true;const body=new FormData();body.append("image",selectedFile,selectedFile.name);try{const response=await fetch(form.dataset.predictUrl,{method:"POST",headers:{"X-CSRFToken":form.elements.csrfmiddlewaretoken.value},body});let payload;try{payload=await response.json()}catch(_){throw new Error("The server returned an unreadable response.")}if(!response.ok)throw new Error(payload.error||"The analysis request failed.");renderResults(payload)}catch(requestError){showError(requestError.message||"The analysis request failed.")}finally{setLoading(false)}});
+        window.addEventListener("beforeunload",()=>{if(previewUrl)URL.revokeObjectURL(previewUrl)});
     </script>
 </body>
 </html>
