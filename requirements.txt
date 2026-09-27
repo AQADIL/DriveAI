@@ -1,23 +1,6 @@
-# Django и основные зависимости
 Django==5.2.6
-djangorestframework==3.15.2
-
-# Машинное обучение и компьютерное зрение
-torch==2.8.0
-torchvision==0.23.0
-torchaudio==2.8.0
-scikit-learn==1.7.2
-
-# Обработка изображений
-Pillow==11.3.0
-opencv-python==4.10.0.84
-
-# Научные вычисления
+joblib==1.5.2
 numpy==2.2.6
-scipy==1.16.2
-
-# HTTP запросы
-requests==2.32.5
-
-# Дополнительные утилиты
+Pillow==11.3.0
 python-dotenv==1.0.1
+scikit-learn==1.7.2

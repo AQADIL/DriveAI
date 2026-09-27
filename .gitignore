@@ -2,4 +2,7 @@
 __pycache__/
 *.pyc
 .env
+db.sqlite3
+ml_model/*.joblib
+ml_model/*.metrics.json
 
