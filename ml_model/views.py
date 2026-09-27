@@ -9,7 +9,7 @@ from django.shortcuts import render
 from PIL import Image
 
 from .forms import PredictionUploadForm
-from .localization import localize_findings
+from .localization import LocalizationRuntime
 from .training import ARTIFACT_VERSION
 from .vision import VisionRuntime
 
@@ -45,6 +45,24 @@ def load_vision_runtime():
         model_id=settings.VISION_MODEL_ID,
         cache_dir=settings.VISION_MODEL_CACHE_DIR,
         device_name=settings.VISION_DEVICE,
+    )
+
+
+@lru_cache(maxsize=1)
+def load_localization_runtime():
+    return LocalizationRuntime(
+        cache_dir=settings.VISION_MODEL_CACHE_DIR,
+        device_name=settings.VISION_DEVICE,
+        damage_model_id=settings.DAMAGE_SEGMENTATION_MODEL_ID,
+        damage_model_file=settings.DAMAGE_SEGMENTATION_MODEL_FILE,
+        damage_confidence=settings.DAMAGE_SEGMENTATION_CONFIDENCE,
+        damage_image_size=settings.DAMAGE_SEGMENTATION_IMAGE_SIZE,
+        max_damage_regions=settings.MAX_DAMAGE_REGIONS,
+        dirt_model_id=settings.DIRT_SEGMENTATION_MODEL_ID,
+        dirt_threshold=settings.DIRT_SEGMENTATION_THRESHOLD,
+        dirt_quantile=settings.DIRT_SEGMENTATION_QUANTILE,
+        dirt_min_area=settings.DIRT_SEGMENTATION_MIN_AREA,
+        max_dirt_regions=settings.MAX_DIRT_REGIONS,
     )
 
 
@@ -87,19 +105,10 @@ def process_image(image_file) -> dict[str, object]:
         intact = intact_probability >= thresholds["intact"]
         intact_score = round(intact_probability * 100, 1)
         integrity_status = "intact" if intact else "possible_damage"
-    regions = localize_findings(
-        runtime,
+    regions = load_localization_runtime().localize(
         image,
         include_dirt=not clean,
         include_damage=integrity_status == "possible_damage",
-        columns=settings.LOCALIZATION_GRID_COLUMNS,
-        rows=settings.LOCALIZATION_GRID_ROWS,
-        window_ratio=settings.LOCALIZATION_WINDOW_RATIO,
-        dirt_threshold=settings.DIRT_REGION_THRESHOLD,
-        damage_threshold=settings.DAMAGE_REGION_THRESHOLD,
-        overlap_threshold=settings.LOCALIZATION_NMS_THRESHOLD,
-        max_regions=settings.LOCALIZATION_MAX_REGIONS,
-        batch_size=settings.VISION_BATCH_SIZE,
     )
     return {
         "clean": clean,
@@ -109,7 +118,7 @@ def process_image(image_file) -> dict[str, object]:
         "intact_score": intact_score,
         "explanation": _explanation(clean, integrity_status),
         "regions": regions,
-        "localization_note": "Highlighted areas are model attention zones, not measured defect boundaries.",
+        "localization_note": "Contours are segmentation estimates and should be confirmed by physical inspection.",
     }
 
 

@@ -7,7 +7,7 @@ from django.test import TestCase
 from django.urls import reverse
 from PIL import Image
 
-from .localization import ScanBox, intersection_over_union, scan_boxes
+from .localization import LocalizationRuntime
 from .training import ARTIFACT_VERSION, collect_samples
 
 
@@ -25,13 +25,9 @@ class FixedVisionRuntime:
         self,
         clean_probability: float,
         damage_probability: float = 0.1,
-        region_type: str = "clear",
-        region_probability: float = 0.9,
     ):
         self.clean_probability = clean_probability
         self.damage_probability_value = damage_probability
-        self.region_type = region_type
-        self.region_probability = region_probability
 
     def encode_images(self, images, batch_size=1):
         return np.ones((len(images), 512), dtype=np.float32)
@@ -42,11 +38,21 @@ class FixedVisionRuntime:
     def damage_probability(self, image_features):
         return self.damage_probability_value
 
-    def region_probabilities(self, image_features):
-        label_order = ("clear", "dirt", "scratch", "dent", "paint_chip", "rust", "broken_part")
-        output = np.full((len(image_features), len(label_order)), 0.01, dtype=np.float32)
-        output[:, label_order.index(self.region_type)] = self.region_probability
-        return output / output.sum(axis=1, keepdims=True)
+
+
+class FixedLocalizationRuntime:
+    def localize(self, image, *, include_dirt, include_damage):
+        finding_type = "scratch" if include_damage else "dirt"
+        if not include_dirt and not include_damage:
+            return []
+        return [{
+            "id": "finding-1",
+            "type": finding_type,
+            "geometry": {
+                "polygon": [{"x": 0.1, "y": 0.1}, {"x": 0.3, "y": 0.1}, {"x": 0.2, "y": 0.3}],
+                "bounds": {"x": 0.1, "y": 0.1, "width": 0.2, "height": 0.2},
+            },
+        }]
 
 
 def image_upload(name: str = "car.jpg") -> SimpleUploadedFile:
@@ -77,21 +83,11 @@ class DatasetTests(TestCase):
 
 
 class LocalizationTests(TestCase):
-    def test_scan_grid_reaches_every_image_edge(self):
-        boxes = scan_boxes(1000, 600, columns=4, rows=3, window_ratio=0.42)
+    def test_polygon_geometry_includes_normalized_bounds(self):
+        geometry = LocalizationRuntime._geometry(np.asarray([[0.1, 0.2], [0.7, 0.3], [0.4, 0.8]]))
 
-        self.assertEqual(len(boxes), 12)
-        self.assertEqual(min(box.left for box in boxes), 0)
-        self.assertEqual(min(box.top for box in boxes), 0)
-        self.assertEqual(max(box.right for box in boxes), 1000)
-        self.assertEqual(max(box.bottom for box in boxes), 600)
-
-    def test_overlap_is_symmetric(self):
-        first = ScanBox(0, 0, 60, 60)
-        second = ScanBox(30, 0, 90, 60)
-
-        self.assertAlmostEqual(intersection_over_union(first, second), 1 / 3)
-        self.assertEqual(intersection_over_union(first, second), intersection_over_union(second, first))
+        self.assertEqual(len(geometry["polygon"]), 3)
+        self.assertEqual(geometry["bounds"], {"x": 0.1, "y": 0.2, "width": 0.6, "height": 0.6})
 
 
 class PredictionViewTests(TestCase):
@@ -110,11 +106,13 @@ class PredictionViewTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("error", response.json())
 
+    @patch("ml_model.views.load_localization_runtime")
     @patch("ml_model.views.load_vision_runtime")
     @patch("ml_model.views.load_model")
-    def test_clean_car_uses_integrity_head(self, mocked_load_model, mocked_vision):
+    def test_clean_car_uses_integrity_head(self, mocked_load_model, mocked_vision, mocked_localization):
         mocked_load_model.return_value = artifact(0.82)
         mocked_vision.return_value = FixedVisionRuntime(0.91)
+        mocked_localization.return_value = FixedLocalizationRuntime()
 
         response = self.client.post(reverse("predict"), {"image": image_upload()})
         payload = response.json()
@@ -126,11 +124,13 @@ class PredictionViewTests(TestCase):
         self.assertEqual(payload["clean_score"], 91.0)
         self.assertEqual(payload["intact_score"], 82.0)
 
+    @patch("ml_model.views.load_localization_runtime")
     @patch("ml_model.views.load_vision_runtime")
     @patch("ml_model.views.load_model")
-    def test_heavy_dirt_withholds_integrity_claim(self, mocked_load_model, mocked_vision):
+    def test_heavy_dirt_withholds_integrity_claim(self, mocked_load_model, mocked_vision, mocked_localization):
         mocked_load_model.return_value = artifact(0.05)
-        mocked_vision.return_value = FixedVisionRuntime(0.01, region_type="dirt")
+        mocked_vision.return_value = FixedVisionRuntime(0.01)
+        mocked_localization.return_value = FixedLocalizationRuntime()
 
         response = self.client.post(reverse("predict"), {"image": image_upload()})
         payload = response.json()
@@ -143,15 +143,13 @@ class PredictionViewTests(TestCase):
         self.assertGreater(len(payload["regions"]), 0)
         self.assertTrue(all(region["type"] == "dirt" for region in payload["regions"]))
 
+    @patch("ml_model.views.load_localization_runtime")
     @patch("ml_model.views.load_vision_runtime")
     @patch("ml_model.views.load_model")
-    def test_obvious_damage_overrides_dirt_gate(self, mocked_load_model, mocked_vision):
+    def test_obvious_damage_overrides_dirt_gate(self, mocked_load_model, mocked_vision, mocked_localization):
         mocked_load_model.return_value = artifact(0.05)
-        mocked_vision.return_value = FixedVisionRuntime(
-            0.1,
-            damage_probability=0.8,
-            region_type="broken_part",
-        )
+        mocked_vision.return_value = FixedVisionRuntime(0.1, damage_probability=0.8)
+        mocked_localization.return_value = FixedLocalizationRuntime()
 
         response = self.client.post(reverse("predict"), {"image": image_upload()})
         payload = response.json()
@@ -160,7 +158,7 @@ class PredictionViewTests(TestCase):
         self.assertFalse(payload["intact"])
         self.assertEqual(payload["intact_score"], 20.0)
         self.assertEqual(payload["integrity_status"], "possible_damage")
-        self.assertTrue(any(region["type"] == "broken_part" for region in payload["regions"]))
+        self.assertTrue(any(region["type"] == "scratch" for region in payload["regions"]))
 
     @patch("ml_model.views.load_model")
     def test_health_exposes_training_metadata(self, mocked_load_model):
