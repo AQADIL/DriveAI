@@ -48,6 +48,12 @@ CAR_DATA_ROOT=fresh_data
 CAR_MODEL_PATH=ml_model/car_condition.joblib
 APP_HOST=127.0.0.1
 APP_PORT=8000
+DJANGO_SECURE_HSTS_SECONDS=0
+DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS=false
+DJANGO_SECURE_HSTS_PRELOAD=false
+DJANGO_SECURE_SSL_REDIRECT=false
+DJANGO_SESSION_COOKIE_SECURE=false
+DJANGO_CSRF_COOKIE_SECURE=false
 ```
 
 Do not commit `.env`; it is ignored by Git.
@@ -113,4 +119,4 @@ run_server.py           Environment-driven local server entry point
 .\.venv\Scripts\python.exe manage.py test
 ```
 
-For a production deployment, use a production WSGI/ASGI server, set `DJANGO_DEBUG=false`, provide an appropriate `DJANGO_ALLOWED_HOSTS` value, and run Django's deployment checks.
+For a production deployment, use a production WSGI/ASGI server, set `DJANGO_DEBUG=false`, provide appropriate host and CSRF origin lists, enable the secure cookie and HTTPS settings from `.env.example`, and run Django's deployment checks. Enable HSTS only after HTTPS is working for every relevant hostname.
