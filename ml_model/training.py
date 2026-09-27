@@ -77,14 +77,23 @@ def _make_classifier(seed: int) -> ExtraTreesClassifier:
     )
 
 
-def _metrics(model: ExtraTreesClassifier, features: np.ndarray, labels: np.ndarray) -> dict[str, float]:
-    predictions = model.predict(features)
-    probabilities = model.predict_proba(features)[:, 1]
+def _best_threshold(labels: np.ndarray, probabilities: np.ndarray) -> float:
+    candidates = np.linspace(0.2, 0.8, 121)
+    scored = [
+        (balanced_accuracy_score(labels, probabilities >= threshold), -abs(threshold - 0.5), threshold)
+        for threshold in candidates
+    ]
+    return round(float(max(scored)[2]), 3)
+
+
+def _metrics(labels: np.ndarray, probabilities: np.ndarray, threshold: float) -> dict[str, float]:
+    predictions = probabilities >= threshold
     return {
         "accuracy": round(float(accuracy_score(labels, predictions)), 4),
         "balanced_accuracy": round(float(balanced_accuracy_score(labels, predictions)), 4),
         "f1": round(float(f1_score(labels, predictions)), 4),
         "roc_auc": round(float(roc_auc_score(labels, probabilities)), 4),
+        "threshold": threshold,
     }
 
 
@@ -112,11 +121,17 @@ def train(model_path: Path, seed: int = 42) -> dict[str, object]:
 
     clean_validation_model = _make_classifier(seed)
     clean_validation_model.fit(matrix[train_indexes & clean_indexes], clean_labels[train_indexes & clean_indexes])
-    clean_metrics = _metrics(clean_validation_model, matrix[validation_indexes & clean_indexes], clean_labels[validation_indexes & clean_indexes])
+    clean_validation_labels = clean_labels[validation_indexes & clean_indexes]
+    clean_validation_probabilities = clean_validation_model.predict_proba(matrix[validation_indexes & clean_indexes])[:, 1]
+    clean_threshold = _best_threshold(clean_validation_labels, clean_validation_probabilities)
+    clean_metrics = _metrics(clean_validation_labels, clean_validation_probabilities, clean_threshold)
 
     intact_validation_model = _make_classifier(seed)
     intact_validation_model.fit(matrix[train_indexes], intact_labels[train_indexes])
-    intact_metrics = _metrics(intact_validation_model, matrix[validation_indexes], intact_labels[validation_indexes])
+    intact_validation_labels = intact_labels[validation_indexes]
+    intact_validation_probabilities = intact_validation_model.predict_proba(matrix[validation_indexes])[:, 1]
+    intact_threshold = _best_threshold(intact_validation_labels, intact_validation_probabilities)
+    intact_metrics = _metrics(intact_validation_labels, intact_validation_probabilities, intact_threshold)
 
     clean_model = _make_classifier(seed)
     clean_model.fit(matrix[clean_indexes], clean_labels[clean_indexes])
@@ -131,6 +146,7 @@ def train(model_path: Path, seed: int = 42) -> dict[str, object]:
         "intact_training_images": len(valid_samples),
         "missing_images": missing,
         "unreadable_images": unreadable,
+        "thresholds": {"clean": clean_threshold, "intact": intact_threshold},
         "validation": {"clean": clean_metrics, "intact": intact_metrics},
     }
     artifact = {
