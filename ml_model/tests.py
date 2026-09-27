@@ -71,10 +71,12 @@ class FixedDamageModel:
         missing_part[25:55, 12:70] = True
         broken_lamp = np.zeros((60, 80), dtype=bool)
         broken_lamp[18:32, 12:30] = True
+        duplicate_missing_part = np.zeros((60, 80), dtype=bool)
+        duplicate_missing_part[17:33, 11:31] = True
         return {
-            "labels_en": ["Missing part", "Broken lamp"],
-            "scores": np.asarray([0.98, 0.91]),
-            "masks": np.asarray([missing_part, broken_lamp]),
+            "labels_en": ["Missing part", "Broken lamp", "Missing part"],
+            "scores": np.asarray([0.98, 0.91, 0.61]),
+            "masks": np.asarray([missing_part, broken_lamp, duplicate_missing_part]),
         }
 
 
@@ -116,6 +118,7 @@ class LocalizationTests(TestCase):
         runtime = object.__new__(LocalizationRuntime)
         runtime.damage_confidence = 0.35
         runtime.damage_duplicate_overlap = 0.65
+        runtime.damage_generic_part_area_ratio = 1.35
         runtime.max_damage_regions = 8
         runtime.__dict__["damage_model"] = FixedDamageModel()
 

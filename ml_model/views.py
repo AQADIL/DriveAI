@@ -56,6 +56,7 @@ def load_localization_runtime():
         damage_model_id=settings.DAMAGE_SEGMENTATION_MODEL_ID,
         damage_confidence=settings.DAMAGE_SEGMENTATION_CONFIDENCE,
         damage_duplicate_overlap=settings.DAMAGE_MASK_DUPLICATE_OVERLAP,
+        damage_generic_part_area_ratio=settings.DAMAGE_GENERIC_PART_AREA_RATIO,
         max_damage_regions=settings.MAX_DAMAGE_REGIONS,
         dirt_model_id=settings.DIRT_SEGMENTATION_MODEL_ID,
         dirt_threshold=settings.DIRT_SEGMENTATION_THRESHOLD,

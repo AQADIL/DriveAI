@@ -85,6 +85,7 @@ class LocalizationRuntime:
         damage_model_id: str,
         damage_confidence: float,
         damage_duplicate_overlap: float,
+        damage_generic_part_area_ratio: float,
         max_damage_regions: int,
         dirt_model_id: str,
         dirt_threshold: float,
@@ -97,6 +98,7 @@ class LocalizationRuntime:
         self.damage_model_id = damage_model_id
         self.damage_confidence = damage_confidence
         self.damage_duplicate_overlap = damage_duplicate_overlap
+        self.damage_generic_part_area_ratio = damage_generic_part_area_ratio
         self.max_damage_regions = max_damage_regions
         self.dirt_model_id = dirt_model_id
         self.dirt_threshold = dirt_threshold
@@ -204,7 +206,13 @@ class LocalizationRuntime:
             binary_mask = np.asarray(mask, dtype=bool)
             duplicate = False
             for accepted_type, accepted_mask in accepted_masks:
-                if accepted_type != finding_type:
+                same_type = accepted_type == finding_type
+                generic_lamp_duplicate = (
+                    finding_type == "missing_part"
+                    and accepted_type == "lamp_broken"
+                    and binary_mask.sum() <= accepted_mask.sum() * self.damage_generic_part_area_ratio
+                )
+                if not same_type and not generic_lamp_duplicate:
                     continue
                 smaller_area = min(binary_mask.sum(), accepted_mask.sum())
                 if smaller_area == 0:
