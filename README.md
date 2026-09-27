@@ -5,7 +5,7 @@ DriveAI is a Django application that estimates two exterior car conditions from 
 - cleanliness;
 - visible body integrity.
 
-The prediction endpoint uses two trained scikit-learn classifiers. It does not contain random answers, filename rules, or a heuristic fallback. If the model artifact is missing or incompatible, the API returns an explicit service error.
+The prediction endpoint uses a pretrained CLIP vision backbone plus a trained integrity head. It does not contain random answers, filename rules, or a heuristic fallback. If the model artifact is missing or incompatible, the API returns an explicit service error.
 
 ## What the model actually uses
 
@@ -13,13 +13,15 @@ The training pipeline reads every available labeled image in `fresh_data`:
 
 | Source | Available images | Labels used |
 | --- | ---: | --- |
-| `train/labels.csv` | 1,610 | cleanliness and integrity |
-| `val/labels.csv` | 460 | cleanliness and integrity |
+| `train/labels.csv` | 1,610 | integrity |
+| `val/labels.csv` | 460 | integrity |
 | `data1a/training` | 1,840 | integrity |
 | `data1a/validation` | 460 | integrity |
 | `test/labels.csv` | 0 of 230 | none; referenced image files are missing |
 
-The pipeline first evaluates on the supplied validation splits, selects a decision threshold for each task by balanced accuracy, and then fits deployable models on all 4,370 available images. The generated metrics report records counts, skipped files, thresholds, accuracy, balanced accuracy, F1, and ROC AUC.
+The repository's `clean` column was rejected after visual auditing showed that it did not reliably represent visible dirt. Cleanliness therefore uses a semantic CLIP prompt ensemble. Integrity uses the provided `intact` labels and `damage/whole` folders: exact duplicate files are removed, a logistic head is selected on the validation split, and the deployable head is then fitted on all 4,347 unique readable images. The generated report records missing files, duplicate removal, threshold, accuracy, balanced accuracy, F1, and ROC AUC.
+
+When a car is heavily obscured by dirt, the API returns `integrity_status: "inconclusive"` instead of treating mud as body damage. The user must clean the car and upload another photo before the application reports integrity.
 
 The model is an image classifier, not a safety inspection. Its ability to generalize is limited by the cars, camera angles, lighting, damage types, and label quality represented in the repository.
 
@@ -47,6 +49,11 @@ MAX_IMAGE_BYTES=5242880
 ALLOWED_IMAGE_FORMATS=JPEG,PNG,WEBP
 CAR_DATA_ROOT=fresh_data
 CAR_MODEL_PATH=ml_model/car_condition.joblib
+VISION_MODEL_ID=openai/clip-vit-base-patch32
+VISION_MODEL_CACHE_DIR=.model_cache
+VISION_DEVICE=auto
+VISION_BATCH_SIZE=16
+INTEGRITY_MIN_CLEAN_PROBABILITY=0.35
 APP_HOST=127.0.0.1
 APP_PORT=8000
 DJANGO_SECURE_HSTS_SECONDS=0
@@ -65,9 +72,9 @@ Do not commit `.env`; it is ignored by Git.
 .\.venv\Scripts\python.exe -m ml_model.training
 ```
 
-Training writes two ignored local artifacts:
+The first run downloads the configured foundation model from Hugging Face. Training writes two local artifacts:
 
-- `ml_model/car_condition.joblib` — fitted classifiers and metadata;
+- `ml_model/car_condition.joblib` — fitted integrity head and metadata;
 - `ml_model/car_condition.metrics.json` — readable validation and dataset report.
 
 Set `CAR_DATA_ROOT` and `CAR_MODEL_PATH` to different locations when the data or artifacts live outside the repository.
@@ -92,11 +99,12 @@ Successful predictions return deterministic model scores:
 
 ```json
 {
-  "clean": true,
-  "intact": false,
-  "clean_score": 78.4,
-  "intact_score": 31.7,
-  "explanation": "The car appears clean, but the model detected signs of body damage."
+  "clean": false,
+  "intact": null,
+  "integrity_status": "inconclusive",
+  "clean_score": 0.1,
+  "intact_score": null,
+  "explanation": "The car is too dirty for a reliable body inspection. Clean it and upload a new photo."
 }
 ```
 
@@ -104,8 +112,8 @@ Successful predictions return deterministic model scores:
 
 ```text
 indrive_car_check/       Django configuration
-ml_model/features.py    Deterministic image feature extraction
-ml_model/training.py    Dataset loading, validation, threshold selection, final fit
+ml_model/vision.py      CLIP loading, embeddings, and semantic cleanliness scoring
+ml_model/training.py    Deduplication, CLIP embeddings, integrity validation and final fit
 ml_model/forms.py       Upload and image validation
 ml_model/views.py       Model loading and prediction API
 fresh_data/             Repository datasets
