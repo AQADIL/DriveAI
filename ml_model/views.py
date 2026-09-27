@@ -66,13 +66,21 @@ def process_image(image_file) -> dict[str, object]:
     with Image.open(image_file) as image:
         image_features = runtime.encode_images([image], batch_size=1)[0]
     clean_probability = runtime.cleanliness_probability(image_features)
+    damage_probability = runtime.damage_probability(image_features)
     intact_probability = float(artifact["intact_model"].predict_proba(image_features.reshape(1, -1))[0, 1])
     thresholds = artifact["metadata"]["thresholds"]
     clean = clean_probability >= thresholds["clean"]
-    if clean_probability < settings.INTEGRITY_MIN_CLEAN_PROBABILITY:
+    if (
+        clean_probability < settings.INTEGRITY_MIN_CLEAN_PROBABILITY
+        and damage_probability < settings.DAMAGE_OVERRIDE_PROBABILITY
+    ):
         intact = None
         intact_score = None
         integrity_status = "inconclusive"
+    elif clean_probability < settings.INTEGRITY_MIN_CLEAN_PROBABILITY:
+        intact = False
+        intact_score = round((1 - damage_probability) * 100, 1)
+        integrity_status = "possible_damage"
     else:
         intact = intact_probability >= thresholds["intact"]
         intact_score = round(intact_probability * 100, 1)

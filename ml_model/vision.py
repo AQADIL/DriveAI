@@ -17,6 +17,14 @@ DIRTY_PROMPTS = (
     "a dirty muddy car covered in mud and road grime",
     "a filthy car with visible dirt, dust, stains, or road salt",
 )
+INTACT_PROMPTS = (
+    "an intact undamaged car body with no dents or scratches",
+    "a car in normal condition without visible body damage",
+)
+DAMAGE_PROMPTS = (
+    "a crashed car with visible collision damage and broken panels",
+    "a damaged car with dents, scratches, broken lights, or missing parts",
+)
 
 
 class VisionRuntime:
@@ -28,6 +36,7 @@ class VisionRuntime:
         self.model = CLIPModel.from_pretrained(model_id, cache_dir=cache_dir).to(self.device)
         self.model.eval()
         self._cleanliness_text_features = self.encode_texts(CLEAN_PROMPTS + DIRTY_PROMPTS)
+        self._damage_text_features = self.encode_texts(INTACT_PROMPTS + DAMAGE_PROMPTS)
 
     @staticmethod
     def _resolve_device(device_name: str) -> torch.device:
@@ -65,10 +74,25 @@ class VisionRuntime:
             return np.empty((0, self.model.projection_dim), dtype=np.float32)
         return np.vstack(batches)
 
-    def cleanliness_probability(self, image_features: np.ndarray) -> float:
+    def _group_probability(self, image_features: np.ndarray, text_features: torch.Tensor, positive_start: int) -> float:
         features = torch.from_numpy(image_features).to(self.device).reshape(1, -1)
         with torch.inference_mode():
             scale = self.model.logit_scale.exp().clamp(max=100)
-            logits = scale * features @ self._cleanliness_text_features.T
+            logits = scale * features @ text_features.T
             probabilities = logits.softmax(dim=-1)[0]
-        return float(probabilities[:len(CLEAN_PROMPTS)].sum().cpu())
+        return float(probabilities[positive_start:].sum().cpu())
+
+    def cleanliness_probability(self, image_features: np.ndarray) -> float:
+        dirty_probability = self._group_probability(
+            image_features,
+            self._cleanliness_text_features,
+            len(CLEAN_PROMPTS),
+        )
+        return 1.0 - dirty_probability
+
+    def damage_probability(self, image_features: np.ndarray) -> float:
+        return self._group_probability(
+            image_features,
+            self._damage_text_features,
+            len(INTACT_PROMPTS),
+        )

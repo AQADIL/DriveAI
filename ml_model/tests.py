@@ -20,14 +20,18 @@ class FixedClassifier:
 
 
 class FixedVisionRuntime:
-    def __init__(self, clean_probability: float):
+    def __init__(self, clean_probability: float, damage_probability: float = 0.1):
         self.clean_probability = clean_probability
+        self.damage_probability_value = damage_probability
 
     def encode_images(self, images, batch_size=1):
         return np.ones((len(images), 512), dtype=np.float32)
 
     def cleanliness_probability(self, image_features):
         return self.clean_probability
+
+    def damage_probability(self, image_features):
+        return self.damage_probability_value
 
 
 def image_upload(name: str = "car.jpg") -> SimpleUploadedFile:
@@ -101,6 +105,20 @@ class PredictionViewTests(TestCase):
         self.assertIsNone(payload["intact"])
         self.assertIsNone(payload["intact_score"])
         self.assertEqual(payload["integrity_status"], "inconclusive")
+
+    @patch("ml_model.views.load_vision_runtime")
+    @patch("ml_model.views.load_model")
+    def test_obvious_damage_overrides_dirt_gate(self, mocked_load_model, mocked_vision):
+        mocked_load_model.return_value = artifact(0.05)
+        mocked_vision.return_value = FixedVisionRuntime(0.1, damage_probability=0.8)
+
+        response = self.client.post(reverse("predict"), {"image": image_upload()})
+        payload = response.json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(payload["intact"])
+        self.assertEqual(payload["intact_score"], 20.0)
+        self.assertEqual(payload["integrity_status"], "possible_damage")
 
     @patch("ml_model.views.load_model")
     def test_health_exposes_training_metadata(self, mocked_load_model):
