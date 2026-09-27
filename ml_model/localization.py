@@ -6,10 +6,20 @@ from pathlib import Path
 import cv2
 import numpy as np
 import torch
-from huggingface_hub import hf_hub_download
+from cardamage import AutoModel
 from PIL import Image, ImageOps
 from transformers import AutoProcessor, CLIPSegForImageSegmentation
-from ultralytics import YOLO
+
+
+DAMAGE_TYPE_BY_LABEL = {
+    "Dent": "dent",
+    "Paint scratch": "scratch",
+    "Tear": "tear",
+    "Missing part": "missing_part",
+    "Puncture": "puncture",
+    "Broken lamp": "lamp_broken",
+    "Broken glass": "glass_shatter",
+}
 
 
 FINDING_COPY = {
@@ -48,6 +58,21 @@ FINDING_COPY = {
         "The model found an abnormal region around a tire or wheel area.",
         "Check tire pressure, sidewall condition, and wheel clearance before driving.",
     ),
+    "missing_part": (
+        "Missing exterior part",
+        "The segmentation model found exposed internal structure where an exterior part should be.",
+        "Do not drive until the mounts, crash structure, cooling components, and wiring are inspected.",
+    ),
+    "tear": (
+        "Torn body material",
+        "The segmented region is consistent with torn, split, or severely deformed body material.",
+        "Have the panel and the structure behind it inspected before driving.",
+    ),
+    "puncture": (
+        "Punctured body panel",
+        "The segmentation model found a hole or puncture in the vehicle body.",
+        "Inspect the panel and any components behind it for secondary damage.",
+    ),
 }
 
 
@@ -58,9 +83,8 @@ class LocalizationRuntime:
         cache_dir: Path,
         device_name: str,
         damage_model_id: str,
-        damage_model_file: str,
         damage_confidence: float,
-        damage_image_size: int,
+        damage_duplicate_overlap: float,
         max_damage_regions: int,
         dirt_model_id: str,
         dirt_threshold: float,
@@ -71,9 +95,8 @@ class LocalizationRuntime:
         self.cache_dir = cache_dir
         self.device = self._resolve_device(device_name)
         self.damage_model_id = damage_model_id
-        self.damage_model_file = damage_model_file
         self.damage_confidence = damage_confidence
-        self.damage_image_size = damage_image_size
+        self.damage_duplicate_overlap = damage_duplicate_overlap
         self.max_damage_regions = max_damage_regions
         self.dirt_model_id = dirt_model_id
         self.dirt_threshold = dirt_threshold
@@ -90,13 +113,13 @@ class LocalizationRuntime:
         return device_name
 
     @cached_property
-    def damage_model(self) -> YOLO:
-        weights_path = hf_hub_download(
-            repo_id=self.damage_model_id,
-            filename=self.damage_model_file,
+    def damage_model(self):
+        model = AutoModel.from_pretrained(
+            self.damage_model_id,
             cache_dir=self.cache_dir,
         )
-        return YOLO(weights_path)
+        model.roi_heads.score_thresh = self.damage_confidence
+        return model.to(torch.device(self.device)).eval()
 
     @cached_property
     def dirt_processor(self):
@@ -148,34 +171,58 @@ class LocalizationRuntime:
             "geometry": self._geometry(points),
         }
 
-    def _damage_findings(self, image: Image.Image) -> list[dict[str, object]]:
-        result = self.damage_model.predict(
-            ImageOps.exif_transpose(image).convert("RGB"),
-            imgsz=self.damage_image_size,
-            conf=self.damage_confidence,
-            max_det=self.max_damage_regions,
-            device=self.device,
-            verbose=False,
-        )[0]
-        if result.masks is None or result.boxes is None:
-            return []
+    @staticmethod
+    def _mask_polygon(mask: np.ndarray) -> np.ndarray | None:
+        binary = np.where(mask, 255, 0).astype(np.uint8)
+        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            return None
+        contour = max(contours, key=cv2.contourArea)
+        if cv2.contourArea(contour) < 16:
+            return None
+        perimeter = cv2.arcLength(contour, True)
+        simplified = cv2.approxPolyDP(contour, 0.003 * perimeter, True).reshape(-1, 2)
+        if len(simplified) < 3:
+            return None
+        return simplified / np.asarray([binary.shape[1] - 1, binary.shape[0] - 1])
 
+    def _damage_findings(self, image: Image.Image) -> list[dict[str, object]]:
+        result = self.damage_model.predict(ImageOps.exif_transpose(image).convert("RGB"))
         findings = []
-        for index, (class_id, confidence, points) in enumerate(
-            zip(result.boxes.cls, result.boxes.conf, result.masks.xyn, strict=True),
-            start=1,
-        ):
-            finding_type = result.names[int(class_id)]
-            if finding_type not in FINDING_COPY or len(points) < 3:
+        accepted_masks = []
+        detections = zip(
+            result["labels_en"],
+            result["scores"],
+            result["masks"],
+            strict=True,
+        )
+        for label, score, mask in detections:
+            confidence = float(score)
+            finding_type = DAMAGE_TYPE_BY_LABEL.get(label)
+            if finding_type is None or confidence < self.damage_confidence:
                 continue
-            findings.append(
-                self._payload(
-                    f"damage-{index}",
-                    finding_type,
-                    float(confidence),
-                    np.asarray(points),
-                )
-            )
+            binary_mask = np.asarray(mask, dtype=bool)
+            duplicate = False
+            for accepted_type, accepted_mask in accepted_masks:
+                if accepted_type != finding_type:
+                    continue
+                smaller_area = min(binary_mask.sum(), accepted_mask.sum())
+                if smaller_area == 0:
+                    continue
+                overlap = np.logical_and(binary_mask, accepted_mask).sum() / smaller_area
+                if overlap >= self.damage_duplicate_overlap:
+                    duplicate = True
+                    break
+            if duplicate:
+                continue
+            points = self._mask_polygon(binary_mask)
+            if points is None:
+                continue
+            finding_index = len(findings) + 1
+            findings.append(self._payload(f"damage-{finding_index}", finding_type, confidence, points))
+            accepted_masks.append((finding_type, binary_mask))
+            if len(findings) >= self.max_damage_regions:
+                break
         return findings
 
     def _dirt_findings(self, image: Image.Image) -> list[dict[str, object]]:

@@ -54,9 +54,8 @@ def load_localization_runtime():
         cache_dir=settings.VISION_MODEL_CACHE_DIR,
         device_name=settings.VISION_DEVICE,
         damage_model_id=settings.DAMAGE_SEGMENTATION_MODEL_ID,
-        damage_model_file=settings.DAMAGE_SEGMENTATION_MODEL_FILE,
         damage_confidence=settings.DAMAGE_SEGMENTATION_CONFIDENCE,
-        damage_image_size=settings.DAMAGE_SEGMENTATION_IMAGE_SIZE,
+        damage_duplicate_overlap=settings.DAMAGE_MASK_DUPLICATE_OVERLAP,
         max_damage_regions=settings.MAX_DAMAGE_REGIONS,
         dirt_model_id=settings.DIRT_SEGMENTATION_MODEL_ID,
         dirt_threshold=settings.DIRT_SEGMENTATION_THRESHOLD,
@@ -108,8 +107,15 @@ def process_image(image_file) -> dict[str, object]:
     regions = load_localization_runtime().localize(
         image,
         include_dirt=not clean,
-        include_damage=integrity_status == "possible_damage",
+        include_damage=integrity_status != "intact",
     )
+    damage_regions = [region for region in regions if region["type"] != "dirt"]
+    if integrity_status == "inconclusive" and damage_regions:
+        strongest_damage = max(region["confidence"] for region in damage_regions) / 100
+        if strongest_damage >= settings.DAMAGE_LOCALIZATION_OVERRIDE_CONFIDENCE:
+            intact = False
+            intact_score = round((1 - max(damage_probability, strongest_damage)) * 100, 1)
+            integrity_status = "possible_damage"
     return {
         "clean": clean,
         "intact": intact,
