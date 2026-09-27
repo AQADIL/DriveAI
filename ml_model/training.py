@@ -3,12 +3,14 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 import joblib
 import numpy as np
+from dotenv import load_dotenv
 from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, roc_auc_score
 
@@ -16,8 +18,19 @@ from ml_model.features import FEATURE_VERSION, extract_features
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATA_ROOT = PROJECT_ROOT / "fresh_data"
-DEFAULT_MODEL_PATH = PROJECT_ROOT / "ml_model" / "car_condition.joblib"
+load_dotenv(PROJECT_ROOT / ".env")
+
+
+def _configured_path(name: str) -> Path:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    path = Path(value)
+    return path if path.is_absolute() else (PROJECT_ROOT / path).resolve()
+
+
+DATA_ROOT = _configured_path("CAR_DATA_ROOT")
+DEFAULT_MODEL_PATH = _configured_path("CAR_MODEL_PATH")
 
 
 @dataclass(frozen=True)
