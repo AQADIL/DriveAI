@@ -1,0 +1,33 @@
+{
+  "feature_version": "car-condition-v1",
+  "trained_at": "2026-09-27T17:29:28.545248+00:00",
+  "available_images": 4370,
+  "clean_training_images": 2070,
+  "intact_training_images": 4370,
+  "missing_images": {
+    "train_csv_missing": 0,
+    "validation_csv_missing": 0,
+    "test_csv_missing": 230
+  },
+  "unreadable_images": [],
+  "thresholds": {
+    "clean": 0.65,
+    "intact": 0.565
+  },
+  "validation": {
+    "clean": {
+      "accuracy": 0.963,
+      "balanced_accuracy": 0.9648,
+      "f1": 0.9765,
+      "roc_auc": 0.9947,
+      "threshold": 0.65
+    },
+    "intact": {
+      "accuracy": 0.9511,
+      "balanced_accuracy": 0.9507,
+      "f1": 0.949,
+      "roc_auc": 0.9929,
+      "threshold": 0.565
+    }
+  }
+}
