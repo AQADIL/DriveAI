@@ -99,6 +99,8 @@ class PredictionViewTests(TestCase):
         response = self.client.get(reverse("home"))
 
         self.assertContains(response, "Analyze photo")
+        self.assertContains(response, "Drop your vehicle photo here")
+        self.assertContains(response, "Detected attention zones")
         self.assertContains(response, "csrfmiddlewaretoken")
 
     def test_invalid_upload_is_rejected(self):

@@ -154,8 +154,7 @@ def localize_findings(
     selected: list[tuple[float, str, ScanBox]] = []
     for candidate in sorted(candidates, key=lambda item: item[0], reverse=True):
         if any(
-            candidate[1] == existing[1]
-            and intersection_over_union(candidate[2], existing[2]) > overlap_threshold
+            intersection_over_union(candidate[2], existing[2]) > overlap_threshold
             for existing in selected
         ):
             continue

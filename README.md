@@ -5,6 +5,8 @@ DriveAI is a Django application that estimates two exterior car conditions from 
 - cleanliness;
 - visible body integrity.
 
+The inspection workspace also returns interactive model-attention zones for likely dirt, scratches, dents, paint damage, corrosion, and broken exterior parts. Localization is gated by the global classifiers: dirt zones are not shown on a globally clean car, and damage zones are not shown unless the integrity stage reports possible damage. These zones explain which image areas influenced the result; they are not pixel-accurate measurements or a substitute for inspection.
+
 The prediction endpoint uses a pretrained CLIP vision backbone plus a trained integrity head. It does not contain random answers, filename rules, or a heuristic fallback. If the model artifact is missing or incompatible, the API returns an explicit service error.
 
 ## What the model actually uses
@@ -55,6 +57,13 @@ VISION_DEVICE=auto
 VISION_BATCH_SIZE=16
 INTEGRITY_MIN_CLEAN_PROBABILITY=0.35
 DAMAGE_OVERRIDE_PROBABILITY=0.50
+LOCALIZATION_GRID_COLUMNS=4
+LOCALIZATION_GRID_ROWS=3
+LOCALIZATION_WINDOW_RATIO=0.42
+DIRT_REGION_THRESHOLD=0.55
+DAMAGE_REGION_THRESHOLD=0.38
+LOCALIZATION_NMS_THRESHOLD=0.18
+LOCALIZATION_MAX_REGIONS=6
 APP_HOST=127.0.0.1
 APP_PORT=8000
 DJANGO_SECURE_HSTS_SECONDS=0
@@ -105,7 +114,18 @@ Successful predictions return deterministic model scores:
   "integrity_status": "inconclusive",
   "clean_score": 0.1,
   "intact_score": null,
-  "explanation": "The car is too dirty for a reliable body inspection. Clean it and upload a new photo."
+  "explanation": "The car is too dirty for a reliable body inspection. Clean it and upload a new photo.",
+  "regions": [
+    {
+      "id": "finding-1",
+      "type": "dirt",
+      "label": "Dirt or road grime",
+      "severity": "high",
+      "confidence": 98.3,
+      "geometry": {"x": 0.19, "y": 0.0, "width": 0.42, "height": 0.42}
+    }
+  ],
+  "localization_note": "Highlighted areas are model attention zones, not measured defect boundaries."
 }
 ```
 
@@ -114,6 +134,7 @@ Successful predictions return deterministic model scores:
 ```text
 indrive_car_check/       Django configuration
 ml_model/vision.py      CLIP loading, embeddings, and semantic cleanliness scoring
+ml_model/localization.py Gated regional scanning, suppression, and finding payloads
 ml_model/training.py    Deduplication, CLIP embeddings, integrity validation and final fit
 ml_model/forms.py       Upload and image validation
 ml_model/views.py       Model loading and prediction API
