@@ -96,8 +96,10 @@ class PredictionViewTests(TestCase):
 
         self.assertContains(response, "Analyze photo")
         self.assertContains(response, "Drop your vehicle photo here")
-        self.assertContains(response, "Detected attention zones")
+        self.assertContains(response, "Detected issues")
         self.assertContains(response, "csrfmiddlewaretoken")
+        self.assertNotContains(response, "Condition scoring")
+        self.assertNotContains(response, "Vision system online")
 
     def test_invalid_upload_is_rejected(self):
         upload = SimpleUploadedFile("car.txt", b"not an image", content_type="text/plain")

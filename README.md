@@ -5,7 +5,7 @@ DriveAI is a Django application that estimates two exterior car conditions from 
 - cleanliness;
 - visible body integrity.
 
-The inspection workspace also returns interactive model-attention zones for likely dirt, scratches, dents, paint damage, corrosion, and broken exterior parts. Localization is gated by the global classifiers: dirt zones are not shown on a globally clean car, and damage zones are not shown unless the integrity stage reports possible damage. These zones explain which image areas influenced the result; they are not pixel-accurate measurements or a substitute for inspection.
+The inspection workspace also returns interactive segmentation contours for likely dirt, scratches, dents, cracks, glass damage, broken lamps, and tire-area damage. A CarDD-trained YOLO segmentation model supplies damage polygons, while CLIPSeg supplies dense dirt masks. Localization is gated by the global classifiers: dirt contours are not shown on a globally clean car, and damage contours are not shown unless the integrity stage reports possible damage. The masks remain model estimates and are not a substitute for physical inspection.
 
 The prediction endpoint uses a pretrained CLIP vision backbone plus a trained integrity head. It does not contain random answers, filename rules, or a heuristic fallback. If the model artifact is missing or incompatible, the API returns an explicit service error.
 
@@ -57,13 +57,16 @@ VISION_DEVICE=auto
 VISION_BATCH_SIZE=16
 INTEGRITY_MIN_CLEAN_PROBABILITY=0.35
 DAMAGE_OVERRIDE_PROBABILITY=0.50
-LOCALIZATION_GRID_COLUMNS=4
-LOCALIZATION_GRID_ROWS=3
-LOCALIZATION_WINDOW_RATIO=0.42
-DIRT_REGION_THRESHOLD=0.55
-DAMAGE_REGION_THRESHOLD=0.38
-LOCALIZATION_NMS_THRESHOLD=0.18
-LOCALIZATION_MAX_REGIONS=6
+DAMAGE_SEGMENTATION_MODEL_ID=abdullahg7/cardd-yolov8s
+DAMAGE_SEGMENTATION_MODEL_FILE=v2.0/best.pt
+DAMAGE_SEGMENTATION_CONFIDENCE=0.30
+DAMAGE_SEGMENTATION_IMAGE_SIZE=640
+MAX_DAMAGE_REGIONS=8
+DIRT_SEGMENTATION_MODEL_ID=CIDAS/clipseg-rd64-refined
+DIRT_SEGMENTATION_THRESHOLD=0.35
+DIRT_SEGMENTATION_QUANTILE=0.72
+DIRT_SEGMENTATION_MIN_AREA=0.015
+MAX_DIRT_REGIONS=3
 APP_HOST=127.0.0.1
 APP_PORT=8000
 DJANGO_SECURE_HSTS_SECONDS=0
@@ -122,10 +125,13 @@ Successful predictions return deterministic model scores:
       "label": "Dirt or road grime",
       "severity": "high",
       "confidence": 98.3,
-      "geometry": {"x": 0.19, "y": 0.0, "width": 0.42, "height": 0.42}
+      "geometry": {
+        "polygon": [{"x": 0.19, "y": 0.24}, {"x": 0.61, "y": 0.28}, {"x": 0.47, "y": 0.71}],
+        "bounds": {"x": 0.19, "y": 0.24, "width": 0.42, "height": 0.47}
+      }
     }
   ],
-  "localization_note": "Highlighted areas are model attention zones, not measured defect boundaries."
+  "localization_note": "Contours are segmentation estimates and should be confirmed by physical inspection."
 }
 ```
 
@@ -134,7 +140,7 @@ Successful predictions return deterministic model scores:
 ```text
 indrive_car_check/       Django configuration
 ml_model/vision.py      CLIP loading, embeddings, and semantic cleanliness scoring
-ml_model/localization.py Gated regional scanning, suppression, and finding payloads
+ml_model/localization.py Gated YOLO/CLIPSeg masks and normalized polygon payloads
 ml_model/training.py    Deduplication, CLIP embeddings, integrity validation and final fit
 ml_model/forms.py       Upload and image validation
 ml_model/views.py       Model loading and prediction API
