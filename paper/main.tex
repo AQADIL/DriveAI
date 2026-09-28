@@ -33,7 +33,8 @@
 
 \author{%
 \IEEEauthorblockN{Alish Akadil}
-\IEEEauthorblockA{Independent Researcher}
+\IEEEauthorblockA{Independent Researcher\\
+Scientific Supervisor: Kaiyrkhan Nurym}
 }
 
 \begin{document}
@@ -112,6 +113,13 @@ All & 2,154 & 2,193 & 4,347 \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\begin{figure*}[htbp]
+    \centering
+    \figasset[0.94\textwidth]{assets/dataset_samples.png}
+    \caption{Representative images from the audited validation sources. The damaged and intact rows illustrate the variation in viewpoint, scale, background, acquisition quality, and collision severity that remains after exact deduplication.}
+    \label{fig:dataset-samples}
+\end{figure*}
 
 The comma-separated source contributes 2,060 retained images, while the folder-organized source contributes 2,287. Image width ranges from 112 to 4,912 pixels, with a median of 277 pixels; height ranges from 74 to 3,264 pixels, with a median of 194 pixels. The median aspect ratio is 1.34, and the observed range is 0.539--3.393. This spread reflects heterogeneous acquisition and includes low-resolution material that is intrinsically unsuitable for fine scratch analysis.
 
@@ -313,10 +321,10 @@ Interface regression & Two observed severe-damage failures & Class and contour i
 
 \subsection{Integrity Classification}
 
-Table~\ref{tab:integrityresults} gives the validated binary integrity result. Balanced accuracy closely matches ordinary accuracy because the validation classes are nearly balanced. The high ROC-AUC indicates that ranking is substantially stronger than would be expected by chance. The value should still be interpreted within the source distribution: the corpus combines multiple origins, contains many low-resolution images, and does not document vehicle-level identity. Exact-byte deduplication prevents literal image leakage but cannot exclude near-duplicate frames or multiple photographs of the same vehicle.
+Table~\ref{tab:integrityresults} gives the archived binary integrity result from the training run. Balanced accuracy closely matches ordinary accuracy because the validation classes are nearly balanced. A fresh regeneration of the figures under the current local software stack reproduced the accuracy, balanced accuracy, F1-score, decision threshold, and confusion counts exactly. Its ROC-AUC was 0.9967, compared with 0.9964 in the archived artifact metadata, a difference of 0.0003 attributable to numerical or dependency-level variation. The table retains the archived value, while Fig.~\ref{fig:roc} identifies the regenerated result. Both values indicate ranking substantially stronger than chance. They should still be interpreted within the source distribution: the corpus combines multiple origins, contains many low-resolution images, and does not document vehicle-level identity. Exact-byte deduplication prevents literal image leakage but cannot exclude near-duplicate frames or multiple photographs of the same vehicle.
 
 \begin{table}[htbp]
-\caption{Integrity-head validation results on 915 images.}
+\caption{Archived integrity-head validation results on 915 images.}
 \label{tab:integrityresults}
 \centering
 \small
@@ -335,9 +343,16 @@ Decision threshold & 0.5000 \\
 
 \begin{figure}[htbp]
     \centering
-    \figasset{confusion_matrix.png}
-    \caption{Confusion matrix for damage-related predictions. The submitted figure should state the evaluated split, class order, confidence threshold, IoU criterion, and whether counts are image-level or instance-level.}
+    \figasset{assets/confusion_matrix.png}
+    \caption{Image-level integrity confusion matrix on the 915-image validation partition at a decision threshold of 0.5. Rows are ground-truth labels and columns are predictions; the positive class is intact.}
     \label{fig:confusion}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \figasset{assets/integrity_roc.png}
+    \caption{Receiver-operating-characteristic curve regenerated from validation probabilities using the current local software stack. The reproduced area under the curve is 0.9967; the archived training artifact records 0.9964.}
+    \label{fig:roc}
 \end{figure}
 
 \subsection{Localization Evidence}
@@ -348,24 +363,10 @@ Two severe failure cases were retained as regression checks during integration. 
 
 \begin{figure*}[htbp]
     \centering
-    \figasset[0.96\textwidth]{detection_samples.png}
-    \caption{Representative vehicle inspections with predicted contours or bounding boxes. A publication-ready montage should include true positives, false positives, false negatives, confidence values, and examples from distinct lighting and viewpoint conditions.}
+    \figasset[0.96\textwidth]{assets/detection_samples.png}
+    \caption{Qualitative localization outputs from the deployed Mask R-CNN branch. Panel (a) identifies missing collision structure, panel (c) responds to broken glass, and panel (d) marks punctures. The broad lamp regions in panels (b) and (d), together with mask spillover in other panels, expose ontology and spatial-precision failures. The images have no local ground-truth masks and are therefore presented as engineering evidence rather than verified true positives.}
     \label{fig:detections}
 \end{figure*}
-
-\begin{figure}[htbp]
-    \centering
-    \figasset{cleanliness_regression.png}
-    \caption{Reference versus predicted dirt coverage for a future continuously annotated cleanliness test set. The current release does not report MAE because suitable coverage ground truth is absent.}
-    \label{fig:cleanliness}
-\end{figure}
-
-\begin{figure}[htbp]
-    \centering
-    \figasset{loss_curves.png}
-    \caption{Training and validation losses for a reproducible end-to-end detector experiment. The deployed integrity head is convex logistic regression on frozen embeddings and is evaluated through held-out metrics rather than neural-network epoch curves.}
-    \label{fig:loss}
-\end{figure}
 
 \subsection{Comparison with Alternative Design Choices}
 

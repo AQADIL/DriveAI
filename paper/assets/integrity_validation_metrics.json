@@ -1,0 +1,20 @@
+{
+  "validation_images": 915,
+  "accuracy": 0.9705,
+  "balanced_accuracy": 0.9706,
+  "f1": 0.9698,
+  "roc_auc": 0.9967,
+  "threshold": 0.5,
+  "confusion_matrix": [
+    [
+      455,
+      15
+    ],
+    [
+      12,
+      433
+    ]
+  ],
+  "archived_roc_auc": 0.9964,
+  "roc_auc_delta": 0.0003
+}
