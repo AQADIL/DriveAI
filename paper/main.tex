@@ -1,0 +1,500 @@
+\documentclass[conference]{IEEEtran}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb}
+\usepackage{cite}
+\usepackage{booktabs}
+\usepackage{subcaption}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{url}
+\usepackage{xcolor}
+\usepackage{microtype}
+\usepackage{hyperref}
+
+\hypersetup{
+    colorlinks=false,
+    pdfborder={0 0 0},
+    pdftitle={A Hybrid Multi-Stage Vision Pipeline for Ride-Hailing Vehicle Inspection Under Unconstrained Smartphone Imaging},
+    pdfauthor={Alish Akadil}
+}
+
+\newcommand{\figasset}[2][0.98\linewidth]{%
+    \IfFileExists{#2}{%
+        \includegraphics[width=#1]{#2}%
+    }{%
+        \fbox{\parbox[c][3.6cm][c]{0.92\linewidth}{\centering\ttfamily\small\detokenize{#2}}}%
+    }%
+}
+
+\title{A Hybrid Multi-Stage Vision Pipeline for Ride-Hailing Vehicle Inspection Under Unconstrained Smartphone Imaging}
+
+\author{%
+\IEEEauthorblockN{Alish Akadil}
+\IEEEauthorblockA{Independent Researcher}
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Ride-hailing operators must inspect large and geographically distributed vehicle fleets while relying on photographs captured by drivers under uncontrolled conditions. Manual review is slow, difficult to standardize, and vulnerable to inconsistent framing, contamination, and deliberate omission of damaged areas. This paper presents DriveAI, a deployed multi-stage visual inspection pipeline developed as an inDrive-oriented case study. The system separates global condition screening from local defect explanation. A contrastively pretrained vision encoder supplies normalized image embeddings; a balanced logistic head estimates body integrity; prompt ensembles estimate cleanliness and collision evidence; Mask R-CNN produces instance masks for dents, scratches, tears, punctures, missing parts, broken lamps, and broken glass; and CLIPSeg localizes dirt. A confidence-gated arbitration layer withholds an integrity decision when contamination obscures the body, while high-confidence localized damage can override an uncertain global result. The audited corpus contains 4,347 unique readable images, including 3,432 training and 915 validation examples. On the held-out validation partition, the integrity head obtained 0.9705 accuracy, 0.9706 balanced accuracy, 0.9698 F1-score, and 0.9964 receiver-operating-characteristic area under the curve. We report the limits of these measurements, analyze difficult illumination and reflection cases, and define the additional annotation required for a defensible end-to-end deployment study.
+\end{abstract}
+
+\begin{IEEEkeywords}
+automated vehicle inspection, computer vision, instance segmentation, ride-hailing, smartphone imagery, vehicle damage assessment, vision--language models
+\end{IEEEkeywords}
+
+\section{Introduction}
+
+Ride-hailing platforms coordinate vehicles that differ substantially in age, body geometry, color, maintenance history, and operating environment. Unlike a rental depot or an insurance inspection center, a platform rarely controls where a driver photographs a vehicle. Images may be captured beside a road, in an underground car park, after rain, or under direct sunlight. They may contain deep shadows, highly specular paint, mud, snow, unrelated vehicles, and only a partial view of the target car. These conditions make exterior inspection a distribution-shift problem rather than a conventional studio-image classification task.
+
+The operational cost of manual review grows with the number of active drivers and with the frequency of re-inspection. Human reviewers must distinguish visible contamination from actual damage, decide whether the submitted view is informative, and document the affected region. The process is also exposed to three forms of avoidable error. First, reviewer thresholds drift over time and across teams. Second, a single image can hide damage through framing or illumination. Third, the absence of a machine-readable contour makes later auditing difficult. Automated analysis should therefore return more than a binary label. It should provide calibrated evidence, spatial localization, and an explicit inconclusive state.
+
+Published vehicle-damage systems have progressed from image-level transfer learning to object detection and instance segmentation \cite{patil2017,dhieb2019,dwivedi2021,wang2023cardd}. However, a deployment-oriented ride-hailing workflow differs from a benchmark in two respects. A clean vehicle can still be structurally damaged, and a dirty vehicle can look damaged without containing a defect. In addition, severe collision damage may manifest as the absence of a component rather than the presence of a familiar texture. A detector trained only on scratches, dents, cracks, shattered glass, broken lamps, and flat tires cannot represent a missing bumper. This class-ontology limitation caused a concrete failure during system testing and motivated the present multi-stage design.
+
+The work makes three contributions.
+
+\begin{enumerate}
+    \item It introduces an operational pipeline that separates cleanliness, global integrity, and localized evidence instead of forcing all observations into one classifier output.
+    \item It describes an evidence-gated decision policy that withholds conclusions for contamination-obscured vehicles but permits a high-confidence instance mask to override an uncertain global score.
+    \item It reports a reproducible audit of the available training corpus and distinguishes measured project results from upstream model benchmarks, preventing unsupported claims about mean average precision or cleanliness error.
+\end{enumerate}
+
+The resulting system is intended for triage and review support. It is not a mechanical safety inspection, a repair-cost estimator, or proof that an unobserved vehicle surface is undamaged.
+
+\section{Related Work}
+
+\subsection{Image-Level Damage Classification}
+
+Early deep-learning studies treated vehicle damage primarily as an image-classification problem. Patil \emph{et al.} used transfer learning for damage classification, demonstrating that pretrained visual features could be adapted to a comparatively small automotive corpus \cite{patil2017}. Kyu and Woraratpanya compared VGG-based transfer-learning configurations for damage location and severity recognition \cite{kyu2020}. Dwivedi \emph{et al.} evaluated several pretrained convolutional backbones and a YOLO detector, emphasizing the benefit of transfer learning when domain data are scarce \cite{dwivedi2021}. These systems established useful baselines, yet an image label cannot identify where a defect is located, and a single-label formulation is poorly matched to vehicles with several concurrent defects.
+
+Dhieb \emph{et al.} combined transfer learning and instance-level reasoning to address detection, localization, and severity assessment \cite{dhieb2019}. Shirode \emph{et al.} likewise formulated damage assessment with convolutional networks and reported classification-oriented results \cite{shirode2022}. Classification remains valuable as a low-cost gate, especially when obvious intact and collision-damaged examples are separable. Its main limitation is evidential: a reviewer cannot determine whether the model responded to a dent, a shadow, the background, or an unrelated object.
+
+\subsection{Detection, Segmentation, and Part Awareness}
+
+One-stage detectors such as YOLO map an image directly to object categories and bounding boxes \cite{redmon2016}. Their speed has encouraged adoption in insurance and fleet applications. Van Ruitenbeek and Bhulai evaluated convolutional detection strategies on more than 10,000 damage images and observed that water, dirt, and strong reflections remain difficult even with domain-specific training \cite{vanruitenbeek2022}. Kannan \emph{et al.} proposed CDA-Net, coupling vehicle identification with damage type, location, and severity predictions \cite{kannan2024}. P\'erez-Zarate \emph{et al.} studied YOLO ensembles in an insurance workflow and released TartesiaDS for appraisal-oriented evaluation \cite{perez2024}. These works show the value of detector ensembles, but rectangular boxes inevitably include intact pixels around irregular scratches, torn panels, or missing components.
+
+Mask R-CNN extends region-based detection with a parallel per-instance mask branch \cite{he2017mask}. Jayaseeli \emph{et al.} applied it to scratch localization and repair-cost analysis, although their single-class dataset limited the range of conclusions \cite{jayaseeli2021}. Zhang \emph{et al.} modified Mask R-CNN for vehicle-damage segmentation and reported gains from architecture-level adaptation \cite{zhang2020access}. Yusuf \emph{et al.} compared real-time instance-segmentation models for identifying vehicle parts, showing why part-aware geometry is necessary before a damage can be assigned to a repair action \cite{yusuf2023}. Pixel masks are more useful than boxes for interactive review, but their annotation cost is higher and small, low-contrast defects remain difficult.
+
+\subsection{Datasets and Operational Systems}
+
+CarDD contains 4,000 high-resolution images and more than 9,000 annotated instances across six damage categories, providing a common basis for object detection and instance segmentation \cite{wang2023cardd}. Its authors also showed that models successful on generic objects do not automatically transfer to thin cracks, scratches, and highly variable dents. Hoang \emph{et al.} later introduced VehiDE with a broader class ontology that includes lost parts, punctures, and undamaged vehicles \cite{hoang2025}. The distinction matters operationally: a missing bumper or lamp assembly is not simply a large scratch.
+
+Zhang \emph{et al.} described a video-based insurance system that aggregates evidence across frames and thereby reduces single-frame noise \cite{zhang2020aaai}. Video improves surface coverage but increases capture time, network traffic, and processing cost. A systematic review by Hasan \emph{et al.} found persistent fragmentation across private datasets, class definitions, and evaluation protocols \cite{hasan2025}. Consequently, results obtained on one corpus should not be presented as end-to-end performance on another.
+
+\subsection{Foundation Models for Open-Vocabulary Evidence}
+
+CLIP learns a shared representation for images and natural-language descriptions, enabling zero-shot transfer through text prompts \cite{radford2021}. CLIPSeg attaches a lightweight decoder to a contrastive vision--language representation and produces a dense mask conditioned on a text or image prompt \cite{luddecke2022}. These models are attractive when the local dataset lacks pixel-level labels for a concept such as road grime. Their scores are semantic similarities, however, not physical measurements. Prompt sensitivity and imperfect calibration must be acknowledged, particularly when a user interface expresses a score as a percentage.
+
+\section{Dataset and Preprocessing}
+
+\subsection{Corpus Composition}
+
+The repository contains two integrity-label sources: comma-separated label files and a folder-organized damage/whole collection. After resolving the referenced paths, the raw available corpus contained 4,370 images. A SHA-256 digest was computed for every file before model fitting. Twenty-three exact duplicates were removed, and no duplicate pair carried conflicting integrity labels. The resulting corpus contains 4,347 unique readable images. Table~\ref{tab:dataset} reports the class and split counts used by the current training program.
+
+\begin{table}[htbp]
+\caption{Audited integrity dataset after exact deduplication.}
+\label{tab:dataset}
+\centering
+\small
+\begin{tabular}{lrrr}
+\toprule
+Partition & Damaged & Intact & Total \\
+\midrule
+Training & 1,684 & 1,748 & 3,432 \\
+Validation & 470 & 445 & 915 \\
+\midrule
+All & 2,154 & 2,193 & 4,347 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The comma-separated source contributes 2,060 retained images, while the folder-organized source contributes 2,287. Image width ranges from 112 to 4,912 pixels, with a median of 277 pixels; height ranges from 74 to 3,264 pixels, with a median of 194 pixels. The median aspect ratio is 1.34, and the observed range is 0.539--3.393. This spread reflects heterogeneous acquisition and includes low-resolution material that is intrinsically unsuitable for fine scratch analysis.
+
+The nominal test label file references 230 images that are absent from the repository. They were excluded rather than silently substituted. No unreadable image remained among the 4,347 retained samples. This audit decision is important: reporting test performance on unresolved paths would create an irreproducible result.
+
+\subsection{Label Audit and Task Definition}
+
+The integrity target is binary: $y=1$ denotes an intact vehicle exterior and $y=0$ denotes visible damage. The raw data also contain a field described as cleanliness. Manual visual checking showed that this field did not consistently encode visible dirt. It was therefore rejected as supervision. The deployed cleanliness value is a semantic model confidence, and the dirt mask yields an estimated affected-area ratio. Neither quantity should be described as a validated physical percentage until continuous ground-truth coverage labels are collected.
+
+Damage localization is supplied by a separately pretrained instance-segmentation model. Its ontology comprises dent, paint scratch, tear, missing part, puncture, broken lamp, and broken glass. Dirt localization is a text-conditioned segmentation task. These localized classes are not derived from the 4,347-image integrity corpus; the distinction between project-trained and externally pretrained components is maintained throughout the evaluation.
+
+\subsection{Preprocessing and Leakage Control}
+
+The pipeline applies EXIF orientation correction before converting every image to RGB. The vision encoder's processor performs the model-specific resizing and normalization. Image features are $\ell_2$-normalized before classification. Deduplication precedes split selection so that identical byte content cannot appear as independent evidence in training and validation.
+
+No synthetic augmentation is applied while fitting the current logistic integrity head. This is deliberate rather than an omitted implementation detail: the head is trained on frozen CLIP embeddings, whereas geometric and photometric augmentation would require re-encoding each transformed image. For a future end-to-end detector experiment, a conservative augmentation policy should include limited horizontal flipping, mild affine changes, exposure and white-balance perturbation, sensor noise, compression artifacts, and partial occlusion. Strong elastic deformation or unrestricted hue shifts should be avoided because they can manufacture nonphysical body geometry or erase the color cues of dirt and paint damage. Albumentations provides reproducible implementations of these transformations \cite{buslaev2020}.
+
+The observed classes are close to balanced, but the learner still uses class-weighted logistic regression. For class $k$ with $n_k$ samples, the balanced weight is proportional to
+\begin{equation}
+    w_k = \frac{N}{K n_k},
+    \label{eq:classweight}
+\end{equation}
+where $N$ is the number of training samples and $K=2$. This guards against smaller future shifts in class frequency without duplicating minority examples.
+
+\section{Proposed System Architecture and Technical Implementation}
+
+\subsection{Pipeline Overview}
+
+DriveAI is implemented in Python using PyTorch, Transformers, scikit-learn, OpenCV, Pillow, and Django. A validated JPEG, PNG, or WebP upload passes through four analytical stages:
+
+\begin{enumerate}
+    \item image validation, orientation correction, and RGB conversion;
+    \item global cleanliness and damage evidence from a CLIP ViT-B/32 encoder;
+    \item binary integrity classification from a logistic head fitted to frozen image embeddings;
+    \item gated instance segmentation for structural damage and text-conditioned dense segmentation for dirt.
+\end{enumerate}
+
+The browser receives normalized polygons rather than raster overlays. It draws scalable-vector contours over the original image and associates every contour with a class, confidence, explanation, and inspection recommendation.
+
+\subsection{Contrastive Global Evidence}
+
+Let $\mathbf{z}\in\mathbb{R}^{d}$ be the normalized image embedding and $\mathbf{t}_j$ a normalized text embedding for prompt $j$. Similarity logits are
+\begin{equation}
+    s_j = \tau\,\mathbf{z}^{\top}\mathbf{t}_j,
+    \label{eq:cliplogit}
+\end{equation}
+where $\tau$ is the learned CLIP logit scale, capped in the implementation to limit numerical extremes. Two clean prompts and two dirty prompts form a four-way softmax. If $\mathcal{D}$ denotes the dirty prompts, the reported cleanliness confidence is
+\begin{equation}
+    p_{\mathrm{clean}} = 1 - \sum_{j\in\mathcal{D}}
+    \frac{\exp(s_j)}{\sum_{m}\exp(s_m)}.
+    \label{eq:clean}
+\end{equation}
+An analogous intact/damaged prompt ensemble supplies semantic collision evidence. Prompt ensembling reduces dependence on one phrasing, but it does not make the result calibrated against physical dirt coverage.
+
+\subsection{Integrity Head}
+
+The frozen embedding is passed to a logistic classifier,
+\begin{equation}
+    p_{\mathrm{intact}} = \sigma(\mathbf{w}^{\top}\mathbf{z}+b),
+    \qquad \sigma(a)=\frac{1}{1+e^{-a}}.
+    \label{eq:logistic}
+\end{equation}
+The inverse regularization parameter $C$ is selected from $\{0.01,0.1,1,10\}$ on the validation partition. Candidate thresholds from 0.2 to 0.8 are evaluated in increments of 0.005, with balanced accuracy as the selection objective. The selected configuration is $C=10$ and threshold 0.5. The deployable head is subsequently refitted on all 4,347 unique images, while Table~\ref{tab:integrityresults} retains the held-out validation result produced during model selection.
+
+\subsection{Damage Instance Segmentation}
+
+The local damage branch uses Mask R-CNN, which augments a region proposal and bounding-box detector with a parallel binary mask head \cite{he2017mask}. The general multi-task objective is
+\begin{equation}
+    \mathcal{L}_{\mathrm{total}} =
+    \mathcal{L}_{\mathrm{cls}}+
+    \mathcal{L}_{\mathrm{box}}+
+    \mathcal{L}_{\mathrm{mask}}.
+    \label{eq:multitask}
+\end{equation}
+For a predicted class distribution $\hat{\mathbf{p}}$ and true class $u$, the classification term is $\mathcal{L}_{\mathrm{cls}}=-\log \hat{p}_{u}$. Box regression commonly uses Smooth L1 loss. For residual $x$ and transition parameter $\beta>0$,
+\begin{equation}
+\operatorname{smooth}_{L_1}(x)=
+\begin{cases}
+\dfrac{x^2}{2\beta}, & |x|<\beta,\\[4pt]
+|x|-\dfrac{\beta}{2}, & \text{otherwise}.
+\end{cases}
+\label{eq:smoothl1}
+\end{equation}
+The mask term is pixelwise binary cross-entropy over the mask selected by the ground-truth class,
+\begin{equation}
+    \mathcal{L}_{\mathrm{mask}}=-\frac{1}{M}
+    \sum_{q=1}^{M}\left[y_q\log \hat{y}_q+
+    (1-y_q)\log(1-\hat{y}_q)\right].
+    \label{eq:maskloss}
+\end{equation}
+
+At inference, predictions below 0.35 confidence are removed and at most eight regions are returned. OpenCV extracts the largest external contour from each full-resolution binary mask and simplifies it with a small perimeter-relative tolerance. Same-class masks are deduplicated by intersection over the smaller mask area. A lower-confidence generic missing-part mask is also suppressed when it substantially duplicates a more specific broken-lamp mask of comparable area. This ordering preserves a broad missing-bumper contour while preventing the same lamp cavity from appearing twice under different labels.
+
+\subsection{Text-Conditioned Dirt Localization}
+
+CLIPSeg receives the prompt ``mud splashes and dirty stains'' and returns a dense probability map $P\in[0,1]^{H\times W}$. Its adaptive threshold is
+\begin{equation}
+    \theta = \max\left(0.35, Q_{0.72}(P)\right),
+    \label{eq:dirtthreshold}
+\end{equation}
+where $Q_{0.72}$ is the 72nd percentile. The binary mask is closed and opened with a $5\times5$ kernel to connect narrow regions and remove isolated activations. Components smaller than 1.5\% of the mask area are discarded, and no more than three dirt regions are returned. A pixel-coverage estimate can be computed as
+\begin{equation}
+    \hat{r}_{\mathrm{dirt}}=\frac{1}{HW}
+    \sum_{x=1}^{W}\sum_{y=1}^{H}
+    \mathbb{I}[P_{y,x}\geq\theta].
+    \label{eq:coverage}
+\end{equation}
+This value is an estimated mask fraction, not a validated measurement of the physical surface area of the vehicle, because perspective and nonvehicle pixels are not explicitly normalized.
+
+\subsection{Decision Arbitration}
+
+The decision layer expresses uncertainty rather than forcing a label. If $p_{\mathrm{clean}}<0.35$ and the global damage-prompt probability is below 0.50, integrity is withheld as \emph{inconclusive}. Dirt regions may still be displayed. If the image is dirty but collision evidence exceeds 0.50, the system reports possible damage. Moreover, a localized non-dirt region with confidence at least 0.80 can override an inconclusive global outcome. This final rule recovered severe missing-bumper cases that the original global gate had suppressed.
+
+Table~\ref{tab:configuration} summarizes the deployed thresholds. They are environment-controlled rather than embedded in the user interface.
+
+\begin{table}[htbp]
+\caption{Deployed inference configuration.}
+\label{tab:configuration}
+\centering
+\small
+\begin{tabular}{p{0.58\linewidth}r}
+\toprule
+Parameter & Value \\
+\midrule
+Integrity decision threshold & 0.50 \\
+Minimum clean probability for direct integrity decision & 0.35 \\
+Global collision override & 0.50 \\
+Damage-mask confidence threshold & 0.35 \\
+Localized damage override & 0.80 \\
+Duplicate-mask overlap threshold & 0.65 \\
+Maximum damage instances & 8 \\
+Dirt probability floor & 0.35 \\
+Dirt quantile threshold & 0.72 \\
+Minimum dirt component area & 0.015 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Evaluation Measures}
+
+For predicted region $B_p$ and reference region $B_g$, intersection over union is
+\begin{equation}
+    \operatorname{IoU}(B_p,B_g)=
+    \frac{|B_p\cap B_g|}{|B_p\cup B_g|}.
+    \label{eq:iou}
+\end{equation}
+At an IoU threshold $t$, a class prediction is a true positive only when its confidence-qualified region matches an unmatched reference region. Precision, recall, and F1-score are
+\begin{equation}
+    \operatorname{Prec}=\frac{TP}{TP+FP},\qquad
+    \operatorname{Rec}=\frac{TP}{TP+FN},
+    \label{eq:pr}
+\end{equation}
+\begin{equation}
+    F_1=2\frac{\operatorname{Prec}\operatorname{Rec}}
+    {\operatorname{Prec}+\operatorname{Rec}}.
+    \label{eq:f1}
+\end{equation}
+Let $p_c(r)$ be the interpolated precision at recall $r$ for class $c$. Average precision and mean average precision at threshold $t$ are
+\begin{equation}
+    AP_c(t)=\int_{0}^{1}p_c(r;t)\,dr,
+    \qquad
+    mAP@t=\frac{1}{C}\sum_{c=1}^{C}AP_c(t).
+    \label{eq:map}
+\end{equation}
+The common COCO summary averages $AP_c(t)$ over $t\in\{0.50,0.55,\ldots,0.95\}$ \cite{lin2014coco}; PASCAL VOC popularized the $0.50$ matching convention \cite{everingham2010}.
+
+For a future cleanliness dataset with continuous ground-truth coverage $r_i$ and estimate $\hat{r}_i$, mean absolute error is
+\begin{equation}
+    \operatorname{MAE}=\frac{1}{N}\sum_{i=1}^{N}|r_i-\hat{r}_i|.
+    \label{eq:mae}
+\end{equation}
+MAE is defined here to fix the intended evaluation protocol; it is not reported for the present corpus because valid continuous cleanliness labels are unavailable.
+
+\section{Experimental Setup and Results}
+
+\subsection{Training and Validation Protocol}
+
+The integrity experiment uses the repository's fixed training and validation assignments after cross-source deduplication. CLIP ViT-B/32 remains frozen, and its normalized image embedding is the sole input to the logistic head. Class weights follow Eq.~\eqref{eq:classweight}; the random seed is 42; and the solver may iterate up to 2,000 times. Hyperparameter and threshold selection use only the 915-image validation partition. The reported metrics are preserved in the trained artifact metadata.
+
+The current repository does not contain project-specific polygon annotations for damage or continuous dirt-coverage labels. Consequently, it cannot support a legitimate local estimate of detection mAP, mask mAP, per-class precision/recall, or cleanliness MAE. These quantities are deliberately not reconstructed from screenshots or inferred from upstream papers. Table~\ref{tab:evidence} separates each result by provenance.
+
+\begin{table*}[htbp]
+\caption{Evidence provenance and evaluation status. A dash denotes a metric that cannot be estimated from the available project labels, not a zero score.}
+\label{tab:evidence}
+\centering
+\small
+\begin{tabular}{p{0.20\textwidth}p{0.22\textwidth}p{0.25\textwidth}p{0.24\textwidth}}
+\toprule
+Component & Evidence source & Reported measures & Interpretation \\
+\midrule
+Integrity head & DriveAI held-out validation, $n=915$ & Accuracy, balanced accuracy, F1, ROC-AUC & Direct project measurement \\
+Cleanliness score & CLIP prompt ensemble & No MAE & Semantic confidence; continuous labels unavailable \\
+Dirt localization & CLIPSeg pretrained weights & No project mask mAP & Qualitative localization only in this release \\
+Damage localization & Pretrained Mask R-CNN release & Upstream AP$_{50}$, AP$_{50:95}$, AR & External benchmark; not a DriveAI test result \\
+Interface regression & Two observed severe-damage failures & Class and contour inspection & Targeted engineering check; not a statistical test \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\subsection{Integrity Classification}
+
+Table~\ref{tab:integrityresults} gives the validated binary integrity result. Balanced accuracy closely matches ordinary accuracy because the validation classes are nearly balanced. The high ROC-AUC indicates that ranking is substantially stronger than would be expected by chance. The value should still be interpreted within the source distribution: the corpus combines multiple origins, contains many low-resolution images, and does not document vehicle-level identity. Exact-byte deduplication prevents literal image leakage but cannot exclude near-duplicate frames or multiple photographs of the same vehicle.
+
+\begin{table}[htbp]
+\caption{Integrity-head validation results on 915 images.}
+\label{tab:integrityresults}
+\centering
+\small
+\begin{tabular}{lr}
+\toprule
+Metric & Score \\
+\midrule
+Accuracy & 0.9705 \\
+Balanced accuracy & 0.9706 \\
+F1-score & 0.9698 \\
+ROC-AUC & 0.9964 \\
+Decision threshold & 0.5000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+    \centering
+    \figasset{confusion_matrix.png}
+    \caption{Confusion matrix for damage-related predictions. The submitted figure should state the evaluated split, class order, confidence threshold, IoU criterion, and whether counts are image-level or instance-level.}
+    \label{fig:confusion}
+\end{figure}
+
+\subsection{Localization Evidence}
+
+The upstream Mask R-CNN release reports AP$_{50}=19.64$, AP$_{50:95}=11.09$, and average recall of 18.8 on its own 417-image test set \cite{naiscorp2026}. These values describe the released checkpoint and its private source distribution; they do not measure DriveAI on the 4,347-image integrity corpus. The modest aggregate AP also cautions against equating a high confidence on one image with broad reliability.
+
+Two severe failure cases were retained as regression checks during integration. In the first, the previous six-class CarDD localizer incorrectly assigned a 0.75 glass-shatter prediction to an intact windshield while the front bumper cover was absent. The replacement model produced a single missing-part mask with confidence 0.998 and no broken-glass region. In the second, the earlier model returned only a broken-lamp mask. The revised pipeline returned a missing-part mask at 0.998 and a broken-lamp mask at 0.994. Mask-level deduplication removed a lower-confidence generic region around the same lamp cavity. These observations validate the correction of the reported failure modes but are not sufficient to estimate population-level accuracy.
+
+\begin{figure*}[htbp]
+    \centering
+    \figasset[0.96\textwidth]{detection_samples.png}
+    \caption{Representative vehicle inspections with predicted contours or bounding boxes. A publication-ready montage should include true positives, false positives, false negatives, confidence values, and examples from distinct lighting and viewpoint conditions.}
+    \label{fig:detections}
+\end{figure*}
+
+\begin{figure}[htbp]
+    \centering
+    \figasset{cleanliness_regression.png}
+    \caption{Reference versus predicted dirt coverage for a future continuously annotated cleanliness test set. The current release does not report MAE because suitable coverage ground truth is absent.}
+    \label{fig:cleanliness}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \figasset{loss_curves.png}
+    \caption{Training and validation losses for a reproducible end-to-end detector experiment. The deployed integrity head is convex logistic regression on frozen embeddings and is evaluated through held-out metrics rather than neural-network epoch curves.}
+    \label{fig:loss}
+\end{figure}
+
+\subsection{Comparison with Alternative Design Choices}
+
+ResNet and EfficientNet remain strong transfer-learning backbones for supervised classification \cite{he2016resnet,tan2019efficientnet}. A conventional ResNet/EfficientNet system would offer a clear training objective and could be optimized for a restricted device budget. The present system instead uses a frozen contrastive encoder because the same representation supports supervised integrity classification and semantic prompt evidence. Likewise, a YOLOv8/v11 segmenter can provide lower latency than a large two-stage model, but a usable checkpoint must include the operational classes required by the platform. The earlier CarDD ontology omitted missing parts and therefore could not represent a destroyed bumper regardless of threshold tuning.
+
+The comparison is architectural rather than a controlled ablation. No common locally annotated detection set is currently available to compare YOLO, Mask R-CNN, ResNet, EfficientNet, and CLIP under identical conditions. Claiming that one family is statistically superior on this project would therefore exceed the evidence.
+
+\section{Discussion and Edge Cases}
+
+\subsection{Illumination and Material Appearance}
+
+Direct sunlight creates saturated highlights and sharp cast shadows. A highlight across a curved door can resemble a scratch; a deep shadow below a bumper may resemble a missing component. Metallic and pearl paints produce view-dependent reflections, while black paint compresses visible contrast. Chrome, wet bodywork, and polished glass add further specular structure. These cases explain why an image-level damage score should not be treated as a localization map.
+
+The recommended capture procedure is to photograph each side under diffuse light, keep the full panel in frame, avoid digital zoom, and acquire a second angle when a region is reflective. Multiple views are particularly important for shallow dents, which are defined by changes in reflected structure rather than a stable texture.
+
+\subsection{Contamination, Occlusion, and Background Bias}
+
+Mud can hide a crack and can also create high-frequency edges that resemble fractured paint. Snow, plastic covers, repair tape, and water droplets obscure evidence in different ways. DriveAI returns an inconclusive integrity state when contamination is high and global collision evidence is weak. This behavior sacrifices automatic coverage to avoid a false assurance of intactness.
+
+Backgrounds can influence semantic models. Fences, workshop equipment, debris, and nearby damaged vehicles may contribute features unrelated to the target. A dedicated vehicle-instance crop or a part segmentation stage would reduce this sensitivity. The current interface asks the user to keep the relevant panels visible, but capture instructions alone cannot replace model-side foreground isolation.
+
+\subsection{Scale, Viewpoint, and Missing Evidence}
+
+Fine scratches may span only a few pixels after model preprocessing. Wide-angle smartphone lenses stretch objects near the frame boundary, and oblique views can compress damage geometry. A single front image contains no evidence about the rear or opposite side. The absence of a predicted region must therefore be read as ``no supported finding in the submitted view,'' not ``no damage on the vehicle.''
+
+Missing-part detection also depends on contextual expectations. An exposed radiator is conspicuous in a frontal passenger-car image, whereas trim differences among vehicle models can be subtle. Part-aware segmentation and vehicle-model metadata would help distinguish legitimate design variation from absence.
+
+\subsection{Confidence and Human Review}
+
+Neural-network confidence is not a repair decision. Thresholds control an operating point and must be calibrated against the costs of false acceptance and false rejection. For ride-hailing onboarding, a missed severe defect may justify a lower review threshold; for routine cleanliness reminders, excessive false positives may impose unnecessary work on drivers. Calibration should be assessed by reliability diagrams and expected calibration error before the score is exposed as a probability \cite{guo2017calibration}.
+
+The production role of DriveAI is triage. High-confidence severe findings should be routed for prompt review, inconclusive submissions should trigger recapture, and borderline cosmetic findings should remain visible to a trained reviewer. Mechanical, structural, and roadworthiness conclusions require physical inspection.
+
+\subsection{Threats to Validity}
+
+Four limitations constrain the present study. First, the integrity validation split may contain near-duplicate views or the same vehicle across partitions because vehicle identity is unavailable. Second, the cleanliness labels failed audit, preventing a numerical regression evaluation. Third, the localizers rely on pretrained weights evaluated outside the project corpus. Fourth, the two corrected severe-damage cases demonstrate engineering improvement but do not constitute an unbiased test set.
+
+A submission claiming complete multi-damage performance should therefore add a locked, vehicle-disjoint test set with instance masks, part labels, continuous dirt coverage, capture metadata, and double-review adjudication. Confidence intervals or bootstrap distributions should accompany each aggregate metric.
+
+\section{Conclusion and Future Work}
+
+This paper described a working hybrid inspection system for ride-hailing vehicle photographs captured outside controlled facilities. The design assigns different responsibilities to global and local models: contrastive embeddings and a logistic head screen overall integrity, prompt ensembles provide semantic cleanliness and collision evidence, Mask R-CNN identifies localized structural and cosmetic damage, and CLIPSeg outlines contamination. An arbitration layer exposes uncertainty and prevents dirt from being silently converted into a confident body-condition judgment.
+
+The integrity component was trained on 4,347 unique readable images and achieved 0.9705 accuracy, 0.9706 balanced accuracy, 0.9698 F1-score, and 0.9964 ROC-AUC on the 915-image validation partition. The paper does not report local mAP or cleanliness MAE because the repository lacks the required annotations. This distinction is central to the credibility of the case study.
+
+The next experimental release should collect a vehicle-disjoint, multi-view benchmark from the intended ride-hailing workflow. Each session should include front, rear, both sides, and oblique views; polygon masks for damage and dirt; affected-part labels; severity; image-quality flags; and adjudication by at least two reviewers. A temporal protocol should compare current evidence with a previously accepted inspection to separate pre-existing and new damage.
+
+For mobile deployment, knowledge distillation, quantization-aware training, and a lightweight detector such as a compact YOLO or EfficientNet-based gate can reduce latency and network usage. A practical edge architecture would reject unusable frames on-device, upload only compliant views, and reserve the larger server-side segmenter for ambiguous or severe cases. The release decision should be based on measured latency, energy consumption, calibration, subgroup robustness, and failure cost rather than parameter count alone.
+
+\begin{thebibliography}{99}
+
+\bibitem{redmon2016}
+J. Redmon, S. Divvala, R. Girshick, and A. Farhadi, ``You only look once: Unified, real-time object detection,'' in \emph{Proc. IEEE Conf. Comput. Vis. Pattern Recognit. (CVPR)}, 2016, pp. 779--788, doi: 10.1109/CVPR.2016.91.
+
+\bibitem{he2017mask}
+K. He, G. Gkioxari, P. Doll\'ar, and R. Girshick, ``Mask R-CNN,'' in \emph{Proc. IEEE Int. Conf. Comput. Vis. (ICCV)}, 2017, pp. 2961--2969, doi: 10.1109/ICCV.2017.322.
+
+\bibitem{radford2021}
+A. Radford \emph{et al.}, ``Learning transferable visual models from natural language supervision,'' in \emph{Proc. 38th Int. Conf. Mach. Learn.}, vol. 139, 2021, pp. 8748--8763.
+
+\bibitem{luddecke2022}
+T. L\"uddecke and A. Ecker, ``Image segmentation using text and image prompts,'' in \emph{Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR)}, 2022, pp. 7086--7096.
+
+\bibitem{patil2017}
+K. Patil, M. Kulkarni, A. Sriraman, and S. Karande, ``Deep learning based car damage classification,'' in \emph{Proc. 16th IEEE Int. Conf. Mach. Learn. Appl. (ICMLA)}, 2017, pp. 50--54, doi: 10.1109/ICMLA.2017.0-179.
+
+\bibitem{dhieb2019}
+N. Dhieb, H. Ghazzai, H. Besbes, and Y. Massoud, ``A very deep transfer learning model for vehicle damage detection and localization,'' in \emph{Proc. 31st Int. Conf. Microelectron. (ICM)}, 2019, pp. 158--161, doi: 10.1109/ICM48031.2019.9021687.
+
+\bibitem{kyu2020}
+P. M. Kyu and K. Woraratpanya, ``Car damage detection and classification,'' in \emph{Proc. 11th Int. Conf. Advances in Information Technology (IAIT)}, 2020, doi: 10.1145/3406601.3406651.
+
+\bibitem{zhang2020aaai}
+W. Zhang \emph{et al.}, ``Automatic car damage assessment system: Reading and understanding videos as professional insurance inspectors,'' in \emph{Proc. AAAI Conf. Artif. Intell.}, vol. 34, no. 9, 2020, pp. 13646--13647, doi: 10.1609/aaai.v34i09.7110.
+
+\bibitem{zhang2020access}
+Q. Zhang, X. Chang, and S. B. Bian, ``Vehicle-damage-detection segmentation algorithm based on improved Mask R-CNN,'' \emph{IEEE Access}, vol. 8, pp. 6997--7004, 2020, doi: 10.1109/ACCESS.2020.2964055.
+
+\bibitem{dwivedi2021}
+M. Dwivedi, H. S. Malik, S. N. Omkar, E. B. Monis, B. Khanna, S. R. Samal, A. Tiwari, and A. Rathi, ``Deep learning-based car damage classification and detection,'' in \emph{Advances in Artificial Intelligence and Data Engineering}. Singapore: Springer, 2021, pp. 207--221, doi: 10.1007/978-981-15-3514-7\_18.
+
+\bibitem{jayaseeli2021}
+J. D. D. Jayaseeli, G. K. Jayaraj, M. Kanakarajan, and D. Malathi, ``Car damage detection and cost evaluation using Mask R-CNN,'' in \emph{Intelligent Computing and Innovation on Data Science}. Singapore: Springer, 2021, pp. 279--288, doi: 10.1007/978-981-16-3153-5\_31.
+
+\bibitem{vanruitenbeek2022}
+R. E. van Ruitenbeek and S. Bhulai, ``Convolutional neural networks for vehicle damage detection,'' \emph{Mach. Learn. Appl.}, vol. 9, Art. no. 100332, 2022, doi: 10.1016/j.mlwa.2022.100332.
+
+\bibitem{shirode2022}
+A. Shirode, T. Rathod, P. Wanjari, and A. Halbe, ``Car damage detection and assessment using CNN,'' in \emph{Proc. IEEE Delhi Section Conf. (DELCON)}, 2022, doi: 10.1109/DELCON54057.2022.9752971.
+
+\bibitem{wang2023cardd}
+X. Wang, W. Li, and Z. Wu, ``CarDD: A new dataset for vision-based car damage detection,'' \emph{IEEE Trans. Intell. Transp. Syst.}, 2023, doi: 10.1109/TITS.2023.3258480.
+
+\bibitem{yusuf2023}
+S. A. Yusuf, A. A. Aldawsari, and R. Souissi, ``Real-time instance segmentation models for identification of vehicle parts,'' \emph{Complexity}, vol. 2023, Art. no. 6460639, 2023, doi: 10.1155/2023/6460639.
+
+\bibitem{kannan2024}
+I. R. Kannan, Y. Balasubramanian, S. P. Subramanian, M. Kandhasamy, and S. Ramesh, ``CDA-Net: Computer vision based automatic car damage analysis,'' in \emph{Proc. 14th Indian Conf. Comput. Vis., Graph. Image Process. (ICVGIP)}, 2023, Art. no. 31, pp. 1--7, doi: 10.1145/3627631.3627662.
+
+\bibitem{perez2024}
+J. P\'erez-Zarate \emph{et al.}, ``Automated car damage assessment using computer vision: Insurance company use case,'' \emph{Appl. Sci.}, vol. 14, no. 20, Art. no. 9560, 2024, doi: 10.3390/app14209560.
+
+\bibitem{hoang2025}
+V.-D. Hoang, N. T. Huynh, N. Tran, K. Le, T.-M.-C. Le, A. Selamat, and H. D. Nguyen, ``Powering AI-driven car damage identification based on VehiDE dataset,'' \emph{J. Inf. Telecommun.}, vol. 9, no. 1, pp. 24--43, 2025, doi: 10.1080/24751839.2024.2367387.
+
+\bibitem{hasan2025}
+M. Hasan \emph{et al.}, ``Vehicle damage detection using artificial intelligence: A systematic literature review,'' \emph{WIREs Data Min. Knowl. Discovery}, 2025, Art. no. e70027, doi: 10.1002/widm.70027.
+
+\bibitem{he2016resnet}
+K. He, X. Zhang, S. Ren, and J. Sun, ``Deep residual learning for image recognition,'' in \emph{Proc. IEEE Conf. Comput. Vis. Pattern Recognit. (CVPR)}, 2016, pp. 770--778, doi: 10.1109/CVPR.2016.90.
+
+\bibitem{tan2019efficientnet}
+M. Tan and Q. Le, ``EfficientNet: Rethinking model scaling for convolutional neural networks,'' in \emph{Proc. 36th Int. Conf. Mach. Learn.}, vol. 97, 2019, pp. 6105--6114.
+
+\bibitem{everingham2010}
+M. Everingham, L. Van Gool, C. K. I. Williams, J. Winn, and A. Zisserman, ``The PASCAL visual object classes (VOC) challenge,'' \emph{Int. J. Comput. Vis.}, vol. 88, no. 2, pp. 303--338, 2010, doi: 10.1007/s11263-009-0275-4.
+
+\bibitem{lin2014coco}
+T.-Y. Lin \emph{et al.}, ``Microsoft COCO: Common objects in context,'' in \emph{Proc. Eur. Conf. Comput. Vis. (ECCV)}, 2014, pp. 740--755, doi: 10.1007/978-3-319-10602-1\_48.
+
+\bibitem{buslaev2020}
+A. Buslaev, V. I. Iglovikov, E. Khvedchenya, A. Parinov, M. Druzhinin, and A. A. Kalinin, ``Albumentations: Fast and flexible image augmentations,'' \emph{Information}, vol. 11, no. 2, Art. no. 125, 2020, doi: 10.3390/info11020125.
+
+\bibitem{guo2017calibration}
+C. Guo, G. Pleiss, Y. Sun, and K. Q. Weinberger, ``On calibration of modern neural networks,'' in \emph{Proc. 34th Int. Conf. Mach. Learn.}, vol. 70, 2017, pp. 1321--1330.
+
+\bibitem{naiscorp2026}
+Naiscorp, ``Car Damage Mask R-CNN (R-101-DC5),'' Hugging Face model repository, 2026. [Online]. Available: \url{https://huggingface.co/Naiscorp/car-damage-detection}. Accessed: Sep. 28, 2026.
+
+\end{thebibliography}
+
+\end{document}

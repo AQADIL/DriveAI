@@ -6,4 +6,5 @@ db.sqlite3
 ml_model/*.joblib
 ml_model/*.metrics.json
 .model_cache/
+paper/build/
 
