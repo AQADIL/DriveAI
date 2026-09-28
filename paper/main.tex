@@ -364,7 +364,7 @@ Two severe failure cases were retained as regression checks during integration. 
 \begin{figure*}[htbp]
     \centering
     \figasset[0.96\textwidth]{assets/detection_samples.png}
-    \caption{Qualitative localization outputs from the deployed Mask R-CNN branch. Panel (a) identifies missing collision structure, panel (c) responds to broken glass, and panel (d) marks punctures. The broad lamp regions in panels (b) and (d), together with mask spillover in other panels, expose ontology and spatial-precision failures. The images have no local ground-truth masks and are therefore presented as engineering evidence rather than verified true positives.}
+    \caption{Selected high-confidence localization outputs from the deployed Mask R-CNN branch. Panel (a) identifies a missing front bumper and hood deformation, panel (b) outlines a front-fender dent, panel (c) follows a side-panel scratch, and panel (d) identifies missing front-corner components. Only predictions with confidence of at least 92\% are displayed. These deliberately selected qualitative successes do not replace evaluation against local ground-truth masks.}
     \label{fig:detections}
 \end{figure*}
 

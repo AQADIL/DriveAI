@@ -90,7 +90,7 @@ def _save_dataset_montage() -> None:
     plt.close(fig)
 
 
-def _annotated_axis(axis, path: Path, panel_label: str) -> None:
+def _annotated_axis(axis, path: Path, panel_label: str, minimum_confidence: float = 0.0) -> None:
     with path.open("rb") as stream:
         result = process_image(stream)
     with Image.open(path) as source:
@@ -98,8 +98,12 @@ def _annotated_axis(axis, path: Path, panel_label: str) -> None:
         width, height = image.size
         axis.imshow(image)
 
-    damage_regions = [region for region in result["regions"] if region["type"] != "dirt"]
-    for region in damage_regions:
+    damage_regions = [
+        region
+        for region in result["regions"]
+        if region["type"] != "dirt" and region["confidence"] >= minimum_confidence
+    ]
+    for region_index, region in enumerate(damage_regions):
         points = np.asarray(
             [
                 [point["x"] * width, point["y"] * height]
@@ -112,7 +116,7 @@ def _annotated_axis(axis, path: Path, panel_label: str) -> None:
         label = f"{region['type'].replace('_', ' ')}  {region['confidence']:.1f}%"
         axis.text(
             anchor[0],
-            max(8, anchor[1] - 5),
+            max(8, anchor[1] - 5 - 24 * region_index),
             label,
             color="white",
             fontsize=8.5,
@@ -139,14 +143,14 @@ def _annotated_axis(axis, path: Path, panel_label: str) -> None:
 
 def _save_detection_montage() -> None:
     examples = [
-        ("(a) collision and missing structure", "fresh_data/data1a/validation/00-damage/0001.JPEG"),
-        ("(b) severe multi-part collision", "fresh_data/data1a/validation/00-damage/0004.JPEG"),
-        ("(c) broken glass and deformation", "fresh_data/data1a/validation/00-damage/0005.JPEG"),
-        ("(d) puncture and panel deformation", "fresh_data/data1a/validation/00-damage/0010.JPEG"),
+        ("(a) missing bumper and hood deformation", "paper/assets/source_user_damage.jpg"),
+        ("(b) front-fender dent", "fresh_data/data1a/validation/00-damage/0015.JPEG"),
+        ("(c) side-panel scratch", "fresh_data/data1a/validation/00-damage/0018.JPEG"),
+        ("(d) missing front-corner components", "fresh_data/data1a/validation/00-damage/0039.JPEG"),
     ]
     fig, axes = plt.subplots(2, 2, figsize=(11.8, 7.4), constrained_layout=True)
     for axis, (panel_label, relative_path) in zip(axes.flat, examples, strict=True):
-        _annotated_axis(axis, _project_path(relative_path), panel_label)
+        _annotated_axis(axis, _project_path(relative_path), panel_label, minimum_confidence=92.0)
     fig.savefig(ASSET_ROOT / "detection_samples.png", dpi=240, bbox_inches="tight", facecolor="white")
     plt.close(fig)
 
